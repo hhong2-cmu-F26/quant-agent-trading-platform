@@ -175,3 +175,7 @@ export async function runWorkerOnce(limit = 10) {
 export async function syncPortfolio() {
   return postJson<PortfolioSyncResult>("/broker/sync-portfolio", {});
 }
+
+export async function cancelOrderProposal(proposalId: string) {
+  return postJson<OrderProposal>(`/orders/proposals/${proposalId}/cancel`, {});
+}

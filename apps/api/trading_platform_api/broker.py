@@ -23,6 +23,10 @@ class BrokerGateway(ABC):
     async def place_equity_order(self, proposal: OrderProposal) -> ExecutionReceipt:
         raise NotImplementedError
 
+    @abstractmethod
+    async def cancel_equity_order(self, broker_order_id: str) -> ExecutionReceipt:
+        raise NotImplementedError
+
 
 class MockRobinhoodGateway(BrokerGateway):
     """Development adapter with Robinhood-like review/place boundaries."""
@@ -59,6 +63,13 @@ class MockRobinhoodGateway(BrokerGateway):
         return ExecutionReceipt(
             broker_order_id=f"mock_{proposal.id}",
             status="submitted",
+            raw={"adapter": "mock_robinhood"},
+        )
+
+    async def cancel_equity_order(self, broker_order_id: str) -> ExecutionReceipt:
+        return ExecutionReceipt(
+            broker_order_id=broker_order_id,
+            status="cancelled",
             raw={"adapter": "mock_robinhood"},
         )
 
@@ -124,6 +135,14 @@ class RobinhoodMCPGateway(BrokerGateway):
         return ExecutionReceipt(
             broker_order_id=broker_order_id,
             status=str(raw.get("status") or "submitted"),
+            raw=raw,
+        )
+
+    async def cancel_equity_order(self, broker_order_id: str) -> ExecutionReceipt:
+        raw = await self.transport.call_tool("cancel_equity_order", {"order_id": broker_order_id})
+        return ExecutionReceipt(
+            broker_order_id=str(raw.get("order_id") or raw.get("id") or raw.get("broker_order_id") or broker_order_id),
+            status=str(raw.get("status") or "cancelled"),
             raw=raw,
         )
 

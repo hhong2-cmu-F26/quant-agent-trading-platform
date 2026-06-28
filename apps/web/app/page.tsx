@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   BarChart3,
   Bot,
+  Ban,
   ClipboardCheck,
   LineChart,
   ListChecks,
@@ -17,6 +18,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import {
   loadDashboardData,
+  cancelOrderProposal,
   runWorkerOnce,
   syncPortfolio,
   type DashboardSummary,
@@ -39,6 +41,7 @@ export default function DashboardPage() {
   const [workerRunning, setWorkerRunning] = useState(false);
   const [portfolioSync, setPortfolioSync] = useState<PortfolioSyncResult | null>(null);
   const [syncRunning, setSyncRunning] = useState(false);
+  const [cancellingProposalId, setCancellingProposalId] = useState<string | null>(null);
 
   async function refresh() {
     setLoading(true);
@@ -88,6 +91,19 @@ export default function DashboardPage() {
       setError(exc instanceof Error ? exc.message : "Unable to sync portfolio");
     } finally {
       setSyncRunning(false);
+    }
+  }
+
+  async function cancelProposal(proposalId: string) {
+    setCancellingProposalId(proposalId);
+    setError(null);
+    try {
+      await cancelOrderProposal(proposalId);
+      await refresh();
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Unable to cancel order");
+    } finally {
+      setCancellingProposalId(null);
     }
   }
 
@@ -151,7 +167,7 @@ export default function DashboardPage() {
       {data && (
         <section className="shell workspace">
           {activeTab === "Operations" && <Operations data={data} />}
-          {activeTab === "Orders" && <Orders data={data} />}
+          {activeTab === "Orders" && <Orders data={data} onCancel={cancelProposal} cancellingProposalId={cancellingProposalId} />}
           {activeTab === "Research" && <Research data={data} />}
           {activeTab === "Audit" && <Audit data={data} />}
         </section>
@@ -200,7 +216,7 @@ function Operations({ data }: { data: DashboardData }) {
   );
 }
 
-function Orders({ data }: { data: DashboardData }) {
+function Orders({ data, onCancel, cancellingProposalId }: { data: DashboardData; onCancel: (proposalId: string) => void; cancellingProposalId: string | null }) {
   return (
     <div className="grid two">
       <Panel title="Order Proposals" icon={<ClipboardCheck />}>
@@ -212,6 +228,7 @@ function Orders({ data }: { data: DashboardData }) {
               <th>Qty</th>
               <th>Status</th>
               <th>Risk</th>
+              <th>Action</th>
             </tr>
           </thead>
           <tbody>
@@ -222,6 +239,16 @@ function Orders({ data }: { data: DashboardData }) {
                 <td>{number(proposal.quantity)}</td>
                 <td><Badge value={proposal.status} /></td>
                 <td>{proposal.risk ? (proposal.risk.approved ? "approved" : "blocked") : "pending"}</td>
+                <td>
+                  {proposal.status === "submitted" ? (
+                    <button className="tableButton" onClick={() => onCancel(proposal.id)} disabled={cancellingProposalId === proposal.id} type="button">
+                      <Ban size={14} />
+                      {cancellingProposalId === proposal.id ? "Cancelling" : "Cancel"}
+                    </button>
+                  ) : (
+                    <span className="statusText">-</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

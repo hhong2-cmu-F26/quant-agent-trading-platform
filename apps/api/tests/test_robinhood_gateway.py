@@ -27,6 +27,8 @@ class FakeTransport:
             }
         if tool_name == "review_equity_order":
             return {"approved": True, "estimated_notional": 200.0, "warnings": []}
+        if tool_name == "cancel_equity_order":
+            return {"order_id": arguments["order_id"], "status": "cancelled"}
         return {"order_id": "rh_order_1", "status": "submitted"}
 
 
@@ -44,10 +46,12 @@ def test_robinhood_gateway_builds_review_and_place_payloads():
 
     review = asyncio.run(gateway.review_equity_order(proposal))
     receipt = asyncio.run(gateway.place_equity_order(proposal))
+    cancel = asyncio.run(gateway.cancel_equity_order(receipt.broker_order_id))
 
     assert review.approved is True
     assert review.estimated_notional == 200.0
     assert receipt.broker_order_id == "rh_order_1"
+    assert cancel.status == "cancelled"
     assert transport.calls == [
         (
             "review_equity_order",
@@ -56,6 +60,10 @@ def test_robinhood_gateway_builds_review_and_place_payloads():
         (
             "place_equity_order",
             {"symbol": "AAPL", "side": "buy", "quantity": 2.0, "order_type": "limit", "limit_price": 100.0},
+        ),
+        (
+            "cancel_equity_order",
+            {"order_id": "rh_order_1"},
         ),
     ]
 

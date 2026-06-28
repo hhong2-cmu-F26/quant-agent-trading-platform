@@ -76,6 +76,50 @@ def test_full_order_flow_reaches_submitted_with_mock_broker():
     assert submitted.execution.broker_order_id.startswith("mock_")
 
 
+def test_submitted_order_can_be_cancelled_with_mock_broker():
+    agent_os, workflow, store = build_workflow()
+    agent = agent_os.register_agent(Agent(name="exec-agent-cancel", role=AgentRole.EXECUTION))
+    proposal = workflow.create_proposal(
+        OrderProposalCreate(
+            agent_id=agent.id,
+            symbol="MSFT",
+            side=OrderSide.BUY,
+            quantity=2,
+            order_type=OrderType.LIMIT,
+            limit_price=100,
+            rationale="cancel test",
+        )
+    )
+
+    workflow.risk_review(proposal.id)
+    asyncio.run(workflow.broker_review(proposal.id))
+    workflow.approve_for_execution(proposal.id)
+    asyncio.run(workflow.submit(proposal.id))
+    cancelled = asyncio.run(workflow.cancel(proposal.id))
+
+    assert cancelled.status == "cancelled"
+    assert cancelled.execution.status == "cancelled"
+    assert store.list_audit_events()[-1]["event_type"] == "order_cancelled"
+
+
+def test_cancel_requires_submitted_order():
+    agent_os, workflow, _ = build_workflow()
+    agent = agent_os.register_agent(Agent(name="exec-agent-cancel-block", role=AgentRole.EXECUTION))
+    proposal = workflow.create_proposal(
+        OrderProposalCreate(
+            agent_id=agent.id,
+            symbol="MSFT",
+            side=OrderSide.BUY,
+            quantity=2,
+            order_type=OrderType.LIMIT,
+            limit_price=100,
+        )
+    )
+
+    with pytest.raises(ValueError, match="submitted"):
+        asyncio.run(workflow.cancel(proposal.id))
+
+
 def test_risk_rejects_missing_limit_price():
     agent_os, workflow, _ = build_workflow()
     agent = agent_os.register_agent(Agent(name="risk-agent-test", role=AgentRole.RISK))

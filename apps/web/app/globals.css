@@ -107,6 +107,26 @@ h1 {
   color: var(--text);
 }
 
+.tableButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid #efb4ad;
+  border-radius: 6px;
+  background: #fff1ef;
+  color: var(--red);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tableButton:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .statusBand {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

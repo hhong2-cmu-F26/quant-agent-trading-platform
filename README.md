@@ -25,6 +25,7 @@ agent task
 -> Robinhood order review abstraction
 -> approval state
 -> execution abstraction
+-> broker cancellation boundary
 -> audit trail
 ```
 

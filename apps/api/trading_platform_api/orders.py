@@ -117,6 +117,25 @@ class OrderWorkflow:
         )
         return proposal
 
+    async def cancel(self, proposal_id: str) -> OrderProposal:
+        proposal = self._get(proposal_id)
+        if proposal.status != ProposalStatus.SUBMITTED:
+            raise ValueError("proposal must be submitted before cancellation")
+        if not proposal.execution:
+            raise ValueError("proposal has no broker order to cancel")
+        receipt = await self.broker.cancel_equity_order(proposal.execution.broker_order_id)
+        proposal.execution = receipt
+        proposal.status = ProposalStatus.CANCELLED
+        proposal.updated_at = utc_now()
+        self.store.save_proposal(proposal)
+        self.store.audit(
+            "order_cancelled",
+            proposal_id=proposal.id,
+            broker_order_id=receipt.broker_order_id,
+            broker_status=receipt.status,
+        )
+        return proposal
+
     def _get(self, proposal_id: str) -> OrderProposal:
         proposal = self.store.get_proposal(proposal_id)
         if not proposal:

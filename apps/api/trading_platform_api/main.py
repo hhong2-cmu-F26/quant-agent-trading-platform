@@ -279,6 +279,14 @@ async def submit(proposal_id: str):
         raise bad_request(exc) from exc
 
 
+@app.post("/orders/proposals/{proposal_id}/cancel")
+async def cancel_order(proposal_id: str):
+    try:
+        return await order_workflow.cancel(proposal_id)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
 @app.get("/audit")
 async def audit_log() -> dict:
     return {"events": repository.list_audit_events()}
