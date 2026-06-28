@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from .agent_os import AgentOS
 from .broker import MockRobinhoodGateway
+from .execution_policy import ExecutionPolicy, ExecutionPolicyConfig
 from .market_data import FeatureEngine, PriceBar
 from .models import Agent, AgentMessage, AgentTask, OrderProposalCreate
 from .orders import OrderWorkflow
@@ -22,7 +23,12 @@ app = FastAPI(title="Quant Agent Trading Platform API")
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "trading_platform.db"
 repository = SQLiteStore(os.getenv("TRADING_PLATFORM_DB_PATH", str(DEFAULT_DB_PATH)))
 agent_os = AgentOS(repository)
-order_workflow = OrderWorkflow(repository, RiskEngine(), MockRobinhoodGateway())
+order_workflow = OrderWorkflow(
+    repository,
+    RiskEngine(),
+    MockRobinhoodGateway(),
+    ExecutionPolicy(ExecutionPolicyConfig(allow_auto_submit=True)),
+)
 feature_engine = FeatureEngine()
 paper_engine = PaperTradingEngine()
 
@@ -115,6 +121,14 @@ async def broker_review(proposal_id: str):
 async def approve(proposal_id: str):
     try:
         return order_workflow.approve_for_execution(proposal_id)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
+@app.post("/orders/proposals/{proposal_id}/policy-review")
+async def policy_review(proposal_id: str):
+    try:
+        return order_workflow.policy_review(proposal_id)
     except ValueError as exc:
         raise bad_request(exc) from exc
 

@@ -100,6 +100,12 @@ class BrokerReview(BaseModel):
     raw: dict[str, Any] = Field(default_factory=dict)
 
 
+class ExecutionPolicyDecision(BaseModel):
+    approved: bool
+    reasons: list[str] = Field(default_factory=list)
+    checks: dict[str, Any] = Field(default_factory=dict)
+
+
 class ExecutionReceipt(BaseModel):
     broker_order_id: str
     status: str
@@ -119,6 +125,7 @@ class OrderProposal(BaseModel):
     status: ProposalStatus = ProposalStatus.PROPOSED
     risk: RiskDecision | None = None
     broker_review: BrokerReview | None = None
+    execution_policy: ExecutionPolicyDecision | None = None
     execution: ExecutionReceipt | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)

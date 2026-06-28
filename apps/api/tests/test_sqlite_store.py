@@ -8,6 +8,7 @@ if str(API_DIR) not in sys.path:
 
 from trading_platform_api.agent_os import AgentOS
 from trading_platform_api.broker import MockRobinhoodGateway
+from trading_platform_api.execution_policy import ExecutionPolicy, ExecutionPolicyConfig
 from trading_platform_api.models import Agent, AgentMessage, AgentRole, AgentTask, OrderProposalCreate, OrderSide, OrderType
 from trading_platform_api.orders import OrderWorkflow
 from trading_platform_api.risk import RiskEngine
@@ -36,7 +37,12 @@ def test_sqlite_store_persists_order_workflow_state(tmp_path):
     store = SQLiteStore(db_path)
     agent_os = AgentOS(store)
     agent = agent_os.register_agent(Agent(name="persistent-exec", role=AgentRole.EXECUTION))
-    workflow = OrderWorkflow(store, RiskEngine(), MockRobinhoodGateway())
+    workflow = OrderWorkflow(
+        store,
+        RiskEngine(),
+        MockRobinhoodGateway(),
+        ExecutionPolicy(ExecutionPolicyConfig(allow_auto_submit=True)),
+    )
     proposal = workflow.create_proposal(
         OrderProposalCreate(
             agent_id=agent.id,
@@ -73,4 +79,3 @@ def test_sqlite_store_persists_audit_events(tmp_path):
 
     assert events[0]["event_type"] == "agent_registered"
     assert events[0]["payload"]["agent_id"] == agent.id
-

@@ -10,6 +10,7 @@ if str(API_DIR) not in sys.path:
 
 from trading_platform_api.agent_os import AgentOS
 from trading_platform_api.broker import MockRobinhoodGateway
+from trading_platform_api.execution_policy import ExecutionPolicy, ExecutionPolicyConfig
 from trading_platform_api.models import Agent, AgentRole, OrderProposalCreate, OrderSide, OrderType
 from trading_platform_api.orders import OrderWorkflow
 from trading_platform_api.risk import RiskEngine
@@ -19,7 +20,12 @@ from trading_platform_api.store import InMemoryStore
 def build_workflow() -> tuple[AgentOS, OrderWorkflow, InMemoryStore]:
     store = InMemoryStore()
     agent_os = AgentOS(store)
-    workflow = OrderWorkflow(store, RiskEngine(), MockRobinhoodGateway())
+    workflow = OrderWorkflow(
+        store,
+        RiskEngine(),
+        MockRobinhoodGateway(),
+        ExecutionPolicy(ExecutionPolicyConfig(allow_auto_submit=True)),
+    )
     return agent_os, workflow, store
 
 
@@ -89,3 +95,30 @@ def test_risk_rejects_missing_limit_price():
     assert reviewed.status == "risk_rejected"
     assert reviewed.risk is not None
     assert "limit price is required" in reviewed.risk.reasons
+
+
+def test_execution_policy_blocks_broker_warnings_by_default():
+    store = InMemoryStore()
+    agent_os = AgentOS(store)
+    workflow = OrderWorkflow(store, RiskEngine(), MockRobinhoodGateway())
+    agent = agent_os.register_agent(Agent(name="warning-agent", role=AgentRole.EXECUTION))
+    proposal = workflow.create_proposal(
+        OrderProposalCreate(
+            agent_id=agent.id,
+            symbol="GME",
+            side=OrderSide.BUY,
+            quantity=1,
+            order_type=OrderType.LIMIT,
+            limit_price=10,
+            rationale="warning test",
+        )
+    )
+
+    workflow.risk_review(proposal.id)
+    asyncio.run(workflow.broker_review(proposal.id))
+    reviewed = workflow.policy_review(proposal.id)
+
+    assert reviewed.execution_policy is not None
+    assert reviewed.execution_policy.approved is False
+    assert "broker review returned warnings" in reviewed.execution_policy.reasons
+    assert "manual execution approval required" in reviewed.execution_policy.reasons

@@ -1,16 +1,24 @@
 from __future__ import annotations
 
 from .broker import BrokerGateway
+from .execution_policy import ExecutionPolicy
 from .models import OrderProposal, OrderProposalCreate, ProposalStatus, utc_now
 from .risk import RiskEngine
 from .store import Repository
 
 
 class OrderWorkflow:
-    def __init__(self, store: Repository, risk: RiskEngine, broker: BrokerGateway):
+    def __init__(
+        self,
+        store: Repository,
+        risk: RiskEngine,
+        broker: BrokerGateway,
+        execution_policy: ExecutionPolicy | None = None,
+    ):
         self.store = store
         self.risk = risk
         self.broker = broker
+        self.execution_policy = execution_policy or ExecutionPolicy()
 
     def create_proposal(self, request: OrderProposalCreate) -> OrderProposal:
         if not self.store.get_agent(request.agent_id):
@@ -53,12 +61,37 @@ class OrderWorkflow:
         )
         return proposal
 
+    def policy_review(self, proposal_id: str) -> OrderProposal:
+        proposal = self._get(proposal_id)
+        decision = self.execution_policy.evaluate(proposal)
+        proposal.execution_policy = decision
+        proposal.updated_at = utc_now()
+        self.store.save_proposal(proposal)
+        self.store.audit(
+            "order_execution_policy_reviewed",
+            proposal_id=proposal.id,
+            approved=decision.approved,
+            reasons=decision.reasons,
+        )
+        return proposal
+
     def approve_for_execution(self, proposal_id: str) -> OrderProposal:
         proposal = self._get(proposal_id)
         if proposal.status != ProposalStatus.BROKER_REVIEWED:
             raise ValueError("proposal must be broker reviewed before approval")
         if not proposal.broker_review or not proposal.broker_review.approved:
             raise ValueError("broker review did not approve proposal")
+        decision = self.execution_policy.evaluate(proposal)
+        proposal.execution_policy = decision
+        if not decision.approved:
+            proposal.updated_at = utc_now()
+            self.store.save_proposal(proposal)
+            self.store.audit(
+                "order_execution_policy_blocked",
+                proposal_id=proposal.id,
+                reasons=decision.reasons,
+            )
+            raise ValueError(f"execution policy blocked proposal: {', '.join(decision.reasons)}")
         proposal.status = ProposalStatus.APPROVED_FOR_EXECUTION
         proposal.updated_at = utc_now()
         self.store.save_proposal(proposal)
@@ -69,6 +102,8 @@ class OrderWorkflow:
         proposal = self._get(proposal_id)
         if proposal.status != ProposalStatus.APPROVED_FOR_EXECUTION:
             raise ValueError("proposal must be approved for execution")
+        if not proposal.execution_policy or not proposal.execution_policy.approved:
+            raise ValueError("proposal must have approved execution policy")
         receipt = await self.broker.place_equity_order(proposal)
         proposal.execution = receipt
         proposal.status = ProposalStatus.SUBMITTED
