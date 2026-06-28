@@ -203,7 +203,12 @@ async def list_agent_messages(agent_id: str, unread_only: bool = False, limit: i
 
 @app.post("/worker/run-once")
 async def run_worker_once(limit: int = 10):
-    return task_worker.run_once(limit=limit)
+    summary = task_worker.run_once(limit=limit)
+    return {
+        "processed": summary.processed,
+        "succeeded": summary.succeeded,
+        "failed": summary.failed,
+    }
 
 
 @app.post("/orders/proposals")

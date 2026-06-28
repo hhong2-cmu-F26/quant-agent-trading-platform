@@ -77,6 +77,19 @@ Allowed browser origins default to `http://localhost:3000` and `http://127.0.0.1
 set TRADING_PLATFORM_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 ```
 
+## Run Worker
+
+```bash
+cd apps/api
+python -m trading_platform_api.worker_service
+```
+
+For a one-shot batch useful in local checks:
+
+```bash
+python -m trading_platform_api.worker_service --max-iterations 1 --poll-interval 0
+```
+
 ## Run Frontend
 
 ```bash

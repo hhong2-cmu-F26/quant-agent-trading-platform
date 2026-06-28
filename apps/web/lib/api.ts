@@ -110,6 +110,12 @@ export type StrategyScore = {
   reasons: string[];
 };
 
+export type WorkerRunSummary = {
+  processed: number;
+  succeeded: number;
+  failed: number;
+};
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 async function getJson<T>(path: string): Promise<T> {
@@ -154,4 +160,8 @@ export async function loadDashboardData() {
     audit: audit.events.slice(0, 25),
     scores: scores.scores
   };
+}
+
+export async function runWorkerOnce(limit = 10) {
+  return postJson<WorkerRunSummary>(`/worker/run-once?limit=${limit}`, {});
 }

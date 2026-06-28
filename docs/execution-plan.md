@@ -103,6 +103,12 @@ Add:
 4. Agent task worker.
 5. Event streaming via Redpanda/Kafka when needed.
 
+Current status:
+
+- `worker_service.py` provides a reusable polling loop around the durable agent task worker
+- worker service can run continuously or as a finite one-shot process for local checks and scheduled jobs
+- dashboard can trigger a worker batch through `/worker/run-once`
+
 ## Agent Roles
 
 - User Copilot Agent

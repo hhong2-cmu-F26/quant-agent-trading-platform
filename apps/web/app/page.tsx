@@ -14,7 +14,7 @@ import {
   WalletCards
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { loadDashboardData, type DashboardSummary } from "../lib/api";
+import { loadDashboardData, runWorkerOnce, type DashboardSummary, type WorkerRunSummary } from "../lib/api";
 
 type DashboardData = Awaited<ReturnType<typeof loadDashboardData>>;
 
@@ -27,6 +27,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("Operations");
   const [updatedAt, setUpdatedAt] = useState<string>("");
+  const [workerRun, setWorkerRun] = useState<WorkerRunSummary | null>(null);
+  const [workerRunning, setWorkerRunning] = useState(false);
 
   async function refresh() {
     setLoading(true);
@@ -50,6 +52,20 @@ export default function DashboardPage() {
 
   const summary = data?.summary;
   const riskState = useMemo(() => riskLabel(summary), [summary]);
+
+  async function runWorker() {
+    setWorkerRunning(true);
+    setError(null);
+    try {
+      const summary = await runWorkerOnce(10);
+      setWorkerRun(summary);
+      await refresh();
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Unable to run worker");
+    } finally {
+      setWorkerRunning(false);
+    }
+  }
 
   return (
     <main>
@@ -83,6 +99,15 @@ export default function DashboardPage() {
           ))}
         </div>
         {loading && <span className="statusText">Loading</span>}
+        <button className="actionButton" onClick={runWorker} disabled={workerRunning} type="button">
+          <TerminalSquare size={16} />
+          {workerRunning ? "Running" : "Run Worker"}
+        </button>
+        {workerRun && (
+          <span className="statusText">
+            Worker {workerRun.processed} processed, {workerRun.failed} failed
+          </span>
+        )}
         {error && (
           <span className="errorText">
             <AlertTriangle size={16} /> {error}
