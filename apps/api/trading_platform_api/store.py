@@ -4,7 +4,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Protocol
 
-from .models import AccountState, Agent, AgentMessage, AgentTask, BrokerOrderSnapshot, OrderProposal, PortfolioPosition
+from .market_data import PriceBar
+from .models import AccountState, Agent, AgentMessage, AgentTask, BacktestRecord, BrokerOrderSnapshot, OrderProposal, PortfolioPosition
 
 
 class Repository(Protocol):
@@ -33,6 +34,11 @@ class Repository(Protocol):
     def list_positions(self) -> list[PortfolioPosition]: ...
     def save_account_state(self, account: AccountState) -> AccountState: ...
     def get_account_state(self) -> AccountState | None: ...
+    def save_price_bars(self, bars: list[PriceBar]) -> list[PriceBar]: ...
+    def list_price_bars(self, symbol: str, limit: int = 200) -> list[PriceBar]: ...
+    def save_backtest(self, record: BacktestRecord) -> BacktestRecord: ...
+    def get_backtest(self, backtest_id: str) -> BacktestRecord | None: ...
+    def list_backtests(self, symbol: str | None = None, limit: int = 50) -> list[BacktestRecord]: ...
     def audit(self, event_type: str, **payload) -> None: ...
     def list_audit_events(self) -> list[dict]: ...
 
@@ -46,6 +52,8 @@ class InMemoryStore:
     broker_orders: dict[str, BrokerOrderSnapshot] = field(default_factory=dict)
     positions: dict[str, PortfolioPosition] = field(default_factory=dict)
     account_state: AccountState | None = None
+    price_bars: dict[tuple[str, str], PriceBar] = field(default_factory=dict)
+    backtests: dict[str, BacktestRecord] = field(default_factory=dict)
     audit_events: list[dict] = field(default_factory=list)
 
     def add_agent(self, agent: Agent) -> Agent:
@@ -147,6 +155,33 @@ class InMemoryStore:
 
     def get_account_state(self) -> AccountState | None:
         return self.account_state
+
+    def save_price_bars(self, bars: list[PriceBar]) -> list[PriceBar]:
+        normalized = []
+        for bar in bars:
+            saved = bar.model_copy(update={"symbol": bar.symbol.strip().upper()})
+            self.price_bars[(saved.symbol, saved.timestamp.isoformat())] = saved
+            normalized.append(saved)
+        return normalized
+
+    def list_price_bars(self, symbol: str, limit: int = 200) -> list[PriceBar]:
+        normalized_symbol = symbol.strip().upper()
+        bars = [bar for (bar_symbol, _), bar in self.price_bars.items() if bar_symbol == normalized_symbol]
+        return sorted(bars, key=lambda bar: bar.timestamp)[-limit:]
+
+    def save_backtest(self, record: BacktestRecord) -> BacktestRecord:
+        self.backtests[record.id] = record
+        return record
+
+    def get_backtest(self, backtest_id: str) -> BacktestRecord | None:
+        return self.backtests.get(backtest_id)
+
+    def list_backtests(self, symbol: str | None = None, limit: int = 50) -> list[BacktestRecord]:
+        records = list(self.backtests.values())
+        if symbol is not None:
+            normalized_symbol = symbol.strip().upper()
+            records = [record for record in records if record.symbol.upper() == normalized_symbol]
+        return sorted(records, key=lambda record: record.created_at, reverse=True)[:limit]
 
     def audit(self, event_type: str, **payload) -> None:
         self.audit_events.append(

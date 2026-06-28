@@ -7,8 +7,10 @@ if str(API_DIR) not in sys.path:
     sys.path.insert(0, str(API_DIR))
 
 from trading_platform_api.agent_os import AgentOS
+from trading_platform_api.backtest import MomentumBacktestConfig, MomentumBacktestEngine, backtest_record_from_result
 from trading_platform_api.broker import MockRobinhoodGateway
 from trading_platform_api.execution_policy import ExecutionPolicy, ExecutionPolicyConfig
+from trading_platform_api.market_data import PriceBar
 from trading_platform_api.models import Agent, AgentRole, AgentTask
 from trading_platform_api.orders import OrderWorkflow
 from trading_platform_api.risk import RiskEngine
@@ -83,3 +85,99 @@ def test_worker_marks_unknown_task_kind_failed():
     assert failed.status == "failed"
     assert "no handler registered" in failed.error
 
+
+def test_worker_can_create_momentum_proposal_from_stored_bars():
+    store, agent_os, worker = build_worker_context()
+    store.save_price_bars([PriceBar.model_validate(item) for item in bar_payload()])
+    agent = agent_os.register_agent(Agent(name="stored-bars-agent", role=AgentRole.QUANT_RESEARCH))
+    task = agent_os.create_task(
+        AgentTask(
+            agent_id=agent.id,
+            kind="quant.momentum_proposal",
+            payload={
+                "symbol": "AAPL",
+                "lookback": 20,
+                "min_momentum": 0.01,
+                "target_notional": 1_000,
+            },
+        )
+    )
+
+    summary = worker.run_once()
+    completed = store.get_task(task.id)
+
+    assert summary.succeeded == 1
+    assert completed.result["proposal_created"] is True
+    assert store.get_proposal(completed.result["proposal_id"]).symbol == "AAPL"
+
+
+def test_worker_can_run_market_data_quality_check():
+    store, agent_os, worker = build_worker_context()
+    store.save_price_bars([PriceBar.model_validate(item) for item in bar_payload()])
+    agent = agent_os.register_agent(Agent(name="quality-agent", role=AgentRole.DATA_QUALITY))
+    task = agent_os.create_task(
+        AgentTask(
+            agent_id=agent.id,
+            kind="market_data.quality_check",
+            payload={"symbol": "AAPL", "limit": 30},
+        )
+    )
+
+    summary = worker.run_once()
+    completed = store.get_task(task.id)
+
+    assert summary.succeeded == 1
+    assert completed.status == "completed"
+    assert completed.result["passed"] is True
+    assert completed.result["symbol"] == "AAPL"
+
+
+def test_worker_can_run_momentum_backtest_from_stored_bars():
+    store, agent_os, worker = build_worker_context()
+    store.save_price_bars([PriceBar.model_validate(item) for item in bar_payload()])
+    agent = agent_os.register_agent(Agent(name="backtest-agent", role=AgentRole.BACKTEST))
+    task = agent_os.create_task(
+        AgentTask(
+            agent_id=agent.id,
+            kind="backtest.momentum",
+            payload={
+                "symbol": "AAPL",
+                "lookback": 20,
+                "min_momentum": 0.01,
+                "target_notional": 1_000,
+            },
+        )
+    )
+
+    summary = worker.run_once()
+    completed = store.get_task(task.id)
+
+    assert summary.succeeded == 1
+    assert completed.status == "completed"
+    assert completed.result["record"]["symbol"] == "AAPL"
+    assert completed.result["result"]["metrics"]["trade_count"] == 2
+    assert store.get_backtest(completed.result["backtest_id"]) is not None
+
+
+def test_worker_can_rank_persisted_backtests():
+    store, agent_os, worker = build_worker_context()
+    config = MomentumBacktestConfig(lookback=20, min_momentum=0.01, target_notional=1_000)
+    result = MomentumBacktestEngine(config).run([PriceBar.model_validate(item) for item in bar_payload()])
+    store.save_backtest(backtest_record_from_result(result, config))
+    agent = agent_os.register_agent(Agent(name="scoring-agent", role=AgentRole.QUANT_RESEARCH))
+    task = agent_os.create_task(
+        AgentTask(
+            agent_id=agent.id,
+            kind="strategy.score_backtests",
+            payload={"symbol": "AAPL", "limit": 10},
+        )
+    )
+
+    summary = worker.run_once()
+    completed = store.get_task(task.id)
+
+    assert summary.succeeded == 1
+    assert completed.status == "completed"
+    assert completed.result["score_count"] == 1
+    assert completed.result["scores"][0]["rank"] == 1
+    assert completed.result["scores"][0]["symbol"] == "AAPL"

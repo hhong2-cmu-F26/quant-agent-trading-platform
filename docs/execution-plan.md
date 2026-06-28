@@ -39,9 +39,14 @@ Add:
 
 Current status:
 
+- durable price bar ingestion/query is implemented for local strategy inputs
+- market data quality checks are implemented for duplicates, invalid OHLC, gaps, and stale bars
 - deterministic feature snapshots are implemented in `market_data.py`
 - a long-only momentum strategy is implemented in `strategy.py`
 - long-only paper replay and risk-adjusted metrics are implemented in `paper.py`
+- a long-only momentum backtest engine is implemented in `backtest.py`
+- backtest records persist with config, metrics, and full result payload
+- risk-adjusted strategy scorecards rank persisted backtests for research agents
 - these modules intentionally have no FastAPI dependency so workers and tests can reuse them
 
 ## Phase 3: Robinhood MCP Gateway

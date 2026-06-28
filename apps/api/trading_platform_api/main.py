@@ -7,14 +7,16 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from .agent_os import AgentOS
+from .backtest import MomentumBacktestConfig, MomentumBacktestEngine, backtest_record_from_result
 from .broker import MockRobinhoodGateway
 from .execution_policy import ExecutionPolicy, ExecutionPolicyConfig
-from .market_data import FeatureEngine, PriceBar
+from .market_data import DataQualityChecker, FeatureEngine, PriceBar
 from .models import AccountState, Agent, AgentMessage, AgentTask, BrokerOrderSnapshot, OrderProposalCreate
 from .orders import OrderWorkflow
 from .paper import PaperTrade, PaperTradingEngine
 from .reconciliation import ReconciliationService
 from .risk import PortfolioRiskEngine
+from .scoring import StrategyScorer, StrategyScoringConfig
 from .sqlite_store import SQLiteStore
 from .strategy import MomentumStrategy, MomentumStrategyConfig
 from .worker import build_default_worker
@@ -32,6 +34,7 @@ order_workflow = OrderWorkflow(
     ExecutionPolicy(ExecutionPolicyConfig(allow_auto_submit=True)),
 )
 feature_engine = FeatureEngine()
+quality_checker = DataQualityChecker()
 paper_engine = PaperTradingEngine()
 reconciliation_service = ReconciliationService(repository)
 task_worker = build_default_worker(repository, order_workflow)
@@ -40,6 +43,18 @@ task_worker = build_default_worker(repository, order_workflow)
 class FeatureRequest(BaseModel):
     bars: list[PriceBar]
     lookback: int = 20
+
+
+class StoredFeatureRequest(BaseModel):
+    symbol: str
+    lookback: int = 20
+    limit: int = 200
+
+
+class StoredQualityRequest(BaseModel):
+    symbol: str
+    limit: int = 200
+    max_staleness_seconds: int | None = None
 
 
 class MomentumProposalRequest(BaseModel):
@@ -54,6 +69,38 @@ class MomentumProposalRequest(BaseModel):
 class PaperReplayRequest(BaseModel):
     trades: list[PaperTrade]
     marks: dict[str, float] = Field(default_factory=dict)
+
+
+class PriceBarsRequest(BaseModel):
+    bars: list[PriceBar]
+
+
+class MomentumBacktestRequest(BaseModel):
+    bars: list[PriceBar]
+    lookback: int = 20
+    min_momentum: float = 0.03
+    max_volatility: float = 0.60
+    target_notional: float = 500.0
+    starting_cash: float = 100_000.0
+
+
+class StoredMomentumBacktestRequest(BaseModel):
+    symbol: str
+    limit: int = 500
+    lookback: int = 20
+    min_momentum: float = 0.03
+    max_volatility: float = 0.60
+    target_notional: float = 500.0
+    starting_cash: float = 100_000.0
+
+
+class StrategyScoringRequest(BaseModel):
+    symbol: str | None = None
+    limit: int = 50
+    min_trades: int = 1
+    drawdown_weight: float = 1.0
+    rejected_trade_penalty: float = 2.0
+    low_trade_penalty: float = 5.0
 
 
 def bad_request(exc: ValueError) -> HTTPException:
@@ -253,16 +300,59 @@ async def dashboard_summary() -> dict:
         "pending_task_count": len(pending_tasks),
         "running_task_count": len(running_tasks),
         "proposal_count": len(proposals),
+        "backtest_count": len(repository.list_backtests(limit=1_000)),
         "open_position_count": len([position for position in positions if abs(position.quantity) > 1e-12]),
         "recent_proposals": proposals[:10],
         "positions": positions,
     }
 
 
+@app.post("/market-data/bars")
+async def save_price_bars(request: PriceBarsRequest):
+    bars = repository.save_price_bars(request.bars)
+    if bars:
+        repository.audit(
+            "market_data_bars_saved",
+            symbol=bars[-1].symbol,
+            count=len(bars),
+            latest_timestamp=bars[-1].timestamp,
+        )
+    return {"bars": bars, "count": len(bars)}
+
+
+@app.get("/market-data/bars/{symbol}")
+async def list_price_bars(symbol: str, limit: int = 200):
+    return {"bars": repository.list_price_bars(symbol, limit=limit)}
+
+
+@app.post("/market-data/quality")
+async def check_market_data_quality(request: StoredQualityRequest):
+    bars = repository.list_price_bars(request.symbol, limit=request.limit)
+    max_staleness = None
+    if request.max_staleness_seconds is not None:
+        from datetime import timedelta
+
+        max_staleness = timedelta(seconds=request.max_staleness_seconds)
+    return quality_checker.check(
+        bars,
+        expected_symbol=request.symbol,
+        max_staleness=max_staleness,
+    )
+
+
 @app.post("/quant/features")
 async def build_features(request: FeatureRequest):
     try:
         return feature_engine.build_snapshot(request.bars, lookback=request.lookback)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
+@app.post("/quant/features/from-store")
+async def build_stored_features(request: StoredFeatureRequest):
+    bars = repository.list_price_bars(request.symbol, limit=request.limit)
+    try:
+        return feature_engine.build_snapshot(bars, lookback=request.lookback)
     except ValueError as exc:
         raise bad_request(exc) from exc
 
@@ -285,7 +375,85 @@ async def build_momentum_proposal(request: MomentumProposalRequest):
     return {"features": features, "proposal": proposal}
 
 
+@app.post("/quant/momentum/proposal/from-store")
+async def build_stored_momentum_proposal(request: StoredFeatureRequest, agent_id: str):
+    bars = repository.list_price_bars(request.symbol, limit=request.limit)
+    try:
+        features = feature_engine.build_snapshot(bars, lookback=request.lookback)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+    proposal = MomentumStrategy().propose(agent_id, features)
+    return {"features": features, "proposal": proposal}
+
+
 @app.post("/paper/replay")
 async def replay_paper_trades(request: PaperReplayRequest):
     portfolio, metrics = paper_engine.replay(request.trades, marks=request.marks)
     return {"portfolio": portfolio, "metrics": metrics}
+
+
+@app.post("/backtests/momentum")
+async def run_momentum_backtest(request: MomentumBacktestRequest):
+    config = MomentumBacktestConfig(
+        lookback=request.lookback,
+        min_momentum=request.min_momentum,
+        max_volatility=request.max_volatility,
+        target_notional=request.target_notional,
+        starting_cash=request.starting_cash,
+    )
+    engine = MomentumBacktestEngine(config)
+    try:
+        result = engine.run(request.bars)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+    record = repository.save_backtest(backtest_record_from_result(result, config))
+    repository.audit("backtest_recorded", backtest_id=record.id, symbol=record.symbol, strategy_id=record.strategy_id)
+    return {"record": record, "result": result}
+
+
+@app.post("/backtests/momentum/from-store")
+async def run_stored_momentum_backtest(request: StoredMomentumBacktestRequest):
+    bars = repository.list_price_bars(request.symbol, limit=request.limit)
+    config = MomentumBacktestConfig(
+        lookback=request.lookback,
+        min_momentum=request.min_momentum,
+        max_volatility=request.max_volatility,
+        target_notional=request.target_notional,
+        starting_cash=request.starting_cash,
+    )
+    engine = MomentumBacktestEngine(config)
+    try:
+        result = engine.run(bars)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+    record = repository.save_backtest(backtest_record_from_result(result, config))
+    repository.audit("backtest_recorded", backtest_id=record.id, symbol=record.symbol, strategy_id=record.strategy_id)
+    return {"record": record, "result": result}
+
+
+@app.get("/backtests")
+async def list_backtests(symbol: str | None = None, limit: int = 50) -> dict:
+    return {"backtests": repository.list_backtests(symbol=symbol, limit=limit)}
+
+
+@app.post("/backtests/scores")
+async def score_backtests(request: StrategyScoringRequest):
+    records = repository.list_backtests(symbol=request.symbol, limit=request.limit)
+    scorer = StrategyScorer(
+        StrategyScoringConfig(
+            min_trades=request.min_trades,
+            drawdown_weight=request.drawdown_weight,
+            rejected_trade_penalty=request.rejected_trade_penalty,
+            low_trade_penalty=request.low_trade_penalty,
+        )
+    )
+    return {"scores": scorer.score(records)}
+
+
+@app.get("/backtests/{backtest_id}")
+async def get_backtest(backtest_id: str):
+    record = repository.get_backtest(backtest_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="backtest not found")
+    return record

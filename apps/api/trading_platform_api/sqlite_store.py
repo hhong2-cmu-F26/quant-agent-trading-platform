@@ -7,7 +7,8 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from .models import AccountState, Agent, AgentMessage, AgentTask, BrokerOrderSnapshot, OrderProposal, PortfolioPosition, utc_now
+from .market_data import PriceBar
+from .models import AccountState, Agent, AgentMessage, AgentTask, BacktestRecord, BrokerOrderSnapshot, OrderProposal, PortfolioPosition, utc_now
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
@@ -161,6 +162,37 @@ class SQLiteStore:
     def get_account_state(self) -> AccountState | None:
         return self._get("account_state", "default", AccountState)
 
+    def save_price_bars(self, bars: list[PriceBar]) -> list[PriceBar]:
+        normalized = []
+        for bar in bars:
+            saved = bar.model_copy(update={"symbol": bar.symbol.strip().upper()})
+            self._put("price_bar", self._bar_id(saved), saved)
+            normalized.append(saved)
+        return normalized
+
+    def list_price_bars(self, symbol: str, limit: int = 200) -> list[PriceBar]:
+        normalized_symbol = symbol.strip().upper()
+        bars = [
+            bar
+            for bar in self._list("price_bar", PriceBar)
+            if bar.symbol.upper() == normalized_symbol
+        ]
+        return sorted(bars, key=lambda bar: bar.timestamp)[-limit:]
+
+    def save_backtest(self, record: BacktestRecord) -> BacktestRecord:
+        self._put("backtest", record.id, record)
+        return record
+
+    def get_backtest(self, backtest_id: str) -> BacktestRecord | None:
+        return self._get("backtest", backtest_id, BacktestRecord)
+
+    def list_backtests(self, symbol: str | None = None, limit: int = 50) -> list[BacktestRecord]:
+        records = self._list("backtest", BacktestRecord)
+        if symbol is not None:
+            normalized_symbol = symbol.strip().upper()
+            records = [record for record in records if record.symbol.upper() == normalized_symbol]
+        return sorted(records, key=lambda record: record.created_at, reverse=True)[:limit]
+
     def audit(self, event_type: str, **payload) -> None:
         with self._connect() as conn:
             conn.execute(
@@ -224,3 +256,6 @@ class SQLiteStore:
                 (kind,),
             ).fetchall()
         return [model_type.model_validate_json(row["payload_json"]) for row in rows]
+
+    def _bar_id(self, bar: PriceBar) -> str:
+        return f"{bar.symbol.upper()}:{bar.timestamp.isoformat()}"

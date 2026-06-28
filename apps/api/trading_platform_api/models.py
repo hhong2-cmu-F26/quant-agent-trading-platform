@@ -153,6 +153,16 @@ class AccountState(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class BacktestRecord(BaseModel):
+    id: str = Field(default_factory=lambda: new_id("backtest"))
+    strategy_id: str
+    symbol: str
+    config: dict[str, Any] = Field(default_factory=dict)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    result: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utc_now)
+
+
 class OrderProposal(BaseModel):
     id: str = Field(default_factory=lambda: new_id("proposal"))
     agent_id: str

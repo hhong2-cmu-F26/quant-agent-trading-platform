@@ -7,6 +7,7 @@ if str(API_DIR) not in sys.path:
     sys.path.insert(0, str(API_DIR))
 
 from trading_platform_api.agent_os import AgentOS
+from trading_platform_api.backtest import MomentumBacktestConfig, MomentumBacktestEngine, backtest_record_from_result
 from trading_platform_api.broker import MockRobinhoodGateway
 from trading_platform_api.execution_policy import ExecutionPolicy, ExecutionPolicyConfig
 from trading_platform_api.models import Agent, AgentMessage, AgentRole, AgentTask, OrderProposalCreate, OrderSide, OrderType
@@ -108,3 +109,31 @@ def test_sqlite_store_lists_proposals_and_messages(tmp_path):
 
     assert reloaded.list_messages()[0].id == message.id
     assert reloaded.list_proposals()[0].id == proposal.id
+
+
+def test_sqlite_store_persists_backtest_records(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    from trading_platform_api.market_data import PriceBar
+
+    bars = [
+        PriceBar(
+            symbol="AAPL",
+            timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(days=index),
+            open=100 + index,
+            high=101 + index,
+            low=99 + index,
+            close=100 + index,
+            volume=1_000_000,
+        )
+        for index in range(40)
+    ]
+    config = MomentumBacktestConfig(lookback=20, min_momentum=0.01, target_notional=1_000)
+    result = MomentumBacktestEngine(config).run(bars)
+    store = SQLiteStore(tmp_path / "platform.db")
+    record = store.save_backtest(backtest_record_from_result(result, config))
+
+    reloaded = SQLiteStore(tmp_path / "platform.db")
+
+    assert reloaded.get_backtest(record.id).metrics["trade_count"] == 2
+    assert reloaded.list_backtests(symbol="AAPL")[0].id == record.id
