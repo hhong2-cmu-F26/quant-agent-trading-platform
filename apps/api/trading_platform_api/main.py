@@ -10,11 +10,11 @@ from .agent_os import AgentOS
 from .broker import MockRobinhoodGateway
 from .execution_policy import ExecutionPolicy, ExecutionPolicyConfig
 from .market_data import FeatureEngine, PriceBar
-from .models import Agent, AgentMessage, AgentTask, BrokerOrderSnapshot, OrderProposalCreate
+from .models import AccountState, Agent, AgentMessage, AgentTask, BrokerOrderSnapshot, OrderProposalCreate
 from .orders import OrderWorkflow
 from .paper import PaperTrade, PaperTradingEngine
 from .reconciliation import ReconciliationService
-from .risk import RiskEngine
+from .risk import PortfolioRiskEngine
 from .sqlite_store import SQLiteStore
 from .strategy import MomentumStrategy, MomentumStrategyConfig
 from .worker import build_default_worker
@@ -27,7 +27,7 @@ repository = SQLiteStore(os.getenv("TRADING_PLATFORM_DB_PATH", str(DEFAULT_DB_PA
 agent_os = AgentOS(repository)
 order_workflow = OrderWorkflow(
     repository,
-    RiskEngine(),
+    PortfolioRiskEngine(repository),
     MockRobinhoodGateway(),
     ExecutionPolicy(ExecutionPolicyConfig(allow_auto_submit=True)),
 )
@@ -226,6 +226,16 @@ async def list_positions() -> dict:
     return {"positions": repository.list_positions()}
 
 
+@app.get("/account")
+async def get_account() -> dict:
+    return {"account": repository.get_account_state()}
+
+
+@app.put("/account")
+async def update_account(account: AccountState):
+    return repository.save_account_state(account)
+
+
 @app.get("/broker/orders")
 async def list_broker_orders(limit: int = 50) -> dict:
     return {"broker_orders": repository.list_broker_orders(limit=limit)}
@@ -238,6 +248,7 @@ async def dashboard_summary() -> dict:
     proposals = repository.list_proposals(limit=1_000)
     positions = repository.list_positions()
     return {
+        "account": repository.get_account_state(),
         "agent_count": len(repository.list_agents()),
         "pending_task_count": len(pending_tasks),
         "running_task_count": len(running_tasks),

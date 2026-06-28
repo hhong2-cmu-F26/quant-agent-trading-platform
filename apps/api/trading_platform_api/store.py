@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Protocol
 
-from .models import Agent, AgentMessage, AgentTask, BrokerOrderSnapshot, OrderProposal, PortfolioPosition
+from .models import AccountState, Agent, AgentMessage, AgentTask, BrokerOrderSnapshot, OrderProposal, PortfolioPosition
 
 
 class Repository(Protocol):
@@ -31,6 +31,8 @@ class Repository(Protocol):
     def save_position(self, position: PortfolioPosition) -> PortfolioPosition: ...
     def get_position(self, symbol: str) -> PortfolioPosition | None: ...
     def list_positions(self) -> list[PortfolioPosition]: ...
+    def save_account_state(self, account: AccountState) -> AccountState: ...
+    def get_account_state(self) -> AccountState | None: ...
     def audit(self, event_type: str, **payload) -> None: ...
     def list_audit_events(self) -> list[dict]: ...
 
@@ -43,6 +45,7 @@ class InMemoryStore:
     proposals: dict[str, OrderProposal] = field(default_factory=dict)
     broker_orders: dict[str, BrokerOrderSnapshot] = field(default_factory=dict)
     positions: dict[str, PortfolioPosition] = field(default_factory=dict)
+    account_state: AccountState | None = None
     audit_events: list[dict] = field(default_factory=list)
 
     def add_agent(self, agent: Agent) -> Agent:
@@ -137,6 +140,13 @@ class InMemoryStore:
 
     def list_positions(self) -> list[PortfolioPosition]:
         return list(self.positions.values())
+
+    def save_account_state(self, account: AccountState) -> AccountState:
+        self.account_state = account
+        return account
+
+    def get_account_state(self) -> AccountState | None:
+        return self.account_state
 
     def audit(self, event_type: str, **payload) -> None:
         self.audit_events.append(

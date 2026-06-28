@@ -8,7 +8,7 @@ if str(API_DIR) not in sys.path:
 from trading_platform_api.agent_os import AgentOS
 from trading_platform_api.broker import MockRobinhoodGateway
 from trading_platform_api.execution_policy import ExecutionPolicy, ExecutionPolicyConfig
-from trading_platform_api.models import Agent, AgentMessage, AgentRole, AgentTask, OrderProposalCreate, OrderSide, OrderType
+from trading_platform_api.models import AccountState, Agent, AgentMessage, AgentRole, AgentTask, OrderProposalCreate, OrderSide, OrderType
 from trading_platform_api.orders import OrderWorkflow
 from trading_platform_api.risk import RiskEngine
 from trading_platform_api.store import InMemoryStore
@@ -16,6 +16,7 @@ from trading_platform_api.store import InMemoryStore
 
 def test_repository_query_methods_return_current_dashboard_state():
     store = InMemoryStore()
+    store.save_account_state(AccountState(buying_power=1_000, cash=1_000, equity=1_000))
     agent_os = AgentOS(store)
     workflow = OrderWorkflow(
         store,
@@ -41,4 +42,3 @@ def test_repository_query_methods_return_current_dashboard_state():
     assert store.list_tasks(status="pending")[0].id == task.id
     assert store.list_messages(unread_only=True)[0].id == message.id
     assert store.list_proposals()[0].id == proposal.id
-

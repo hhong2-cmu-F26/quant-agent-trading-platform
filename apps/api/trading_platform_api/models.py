@@ -146,6 +146,13 @@ class PortfolioPosition(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class AccountState(BaseModel):
+    buying_power: float = 0.0
+    cash: float = 0.0
+    equity: float = 0.0
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class OrderProposal(BaseModel):
     id: str = Field(default_factory=lambda: new_id("proposal"))
     agent_id: str

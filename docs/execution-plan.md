@@ -22,6 +22,7 @@ Current status:
 - `quant.momentum_proposal` can turn bar data into an order proposal
 - query APIs exist for agents, tasks, messages, proposals, broker orders, positions, and dashboard summary
 - order proposal state machine exists with risk review and mock broker submission
+- risk review can include durable account buying power and current position concentration
 - SQLite persistence is the default API repository
 - audit events are durable
 

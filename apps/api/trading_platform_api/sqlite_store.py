@@ -7,7 +7,7 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from .models import Agent, AgentMessage, AgentTask, BrokerOrderSnapshot, OrderProposal, PortfolioPosition, utc_now
+from .models import AccountState, Agent, AgentMessage, AgentTask, BrokerOrderSnapshot, OrderProposal, PortfolioPosition, utc_now
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
@@ -153,6 +153,13 @@ class SQLiteStore:
 
     def list_positions(self) -> list[PortfolioPosition]:
         return self._list("position", PortfolioPosition)
+
+    def save_account_state(self, account: AccountState) -> AccountState:
+        self._put("account_state", "default", account)
+        return account
+
+    def get_account_state(self) -> AccountState | None:
+        return self._get("account_state", "default", AccountState)
 
     def audit(self, event_type: str, **payload) -> None:
         with self._connect() as conn:
