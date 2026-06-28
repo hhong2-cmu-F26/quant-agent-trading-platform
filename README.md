@@ -44,6 +44,7 @@ LLM agents may research, propose, and explain. They do not get final direct auth
 
 ```text
 apps/api/                 FastAPI backend core
+apps/web/                 Next.js operator dashboard
 docs/                     architecture and execution plan
 agent_skills/             role-specific agent operating instructions
 ```
@@ -68,4 +69,30 @@ Override it with:
 
 ```bash
 set TRADING_PLATFORM_DB_PATH=C:\path\to\platform.db
+```
+
+Allowed browser origins default to `http://localhost:3000` and `http://127.0.0.1:3000`. Override them with:
+
+```bash
+set TRADING_PLATFORM_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+```
+
+## Run Frontend
+
+```bash
+cd apps/web
+npm install
+npm run dev
+```
+
+The dashboard expects the API at:
+
+```text
+http://localhost:8000
+```
+
+Override it with:
+
+```bash
+set NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 ```

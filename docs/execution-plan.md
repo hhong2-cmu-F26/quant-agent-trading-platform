@@ -87,6 +87,12 @@ Add Next.js dashboard:
 5. Live order monitor.
 6. Audit log.
 
+Current status:
+
+- `apps/web` contains the first Next.js operator dashboard
+- dashboard sections cover account state, agents, tasks, proposals, broker orders, backtests, strategy scores, and audit events
+- API access is isolated in a typed client so backend contracts stay visible
+
 ## Phase 5: Workers and Streaming
 
 Add:

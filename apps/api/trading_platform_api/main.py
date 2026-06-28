@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from .agent_os import AgentOS
@@ -23,6 +24,17 @@ from .worker import build_default_worker
 
 
 app = FastAPI(title="Quant Agent Trading Platform API")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        origin.strip()
+        for origin in os.getenv("TRADING_PLATFORM_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+        if origin.strip()
+    ],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "trading_platform.db"
 repository = SQLiteStore(os.getenv("TRADING_PLATFORM_DB_PATH", str(DEFAULT_DB_PATH)))

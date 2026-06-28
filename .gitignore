@@ -5,4 +5,9 @@ __pycache__/
 venv/
 .env
 .external/
-
+node_modules/
+.next/
+out/
+*.log
+*.tsbuildinfo
+apps/data/
