@@ -97,6 +97,12 @@ class SQLiteStore:
     def get_message(self, message_id: str) -> AgentMessage | None:
         return self._get("message", message_id, AgentMessage)
 
+    def list_messages(self, unread_only: bool = False, limit: int = 20) -> list[AgentMessage]:
+        messages = self._list("message", AgentMessage)
+        if unread_only:
+            messages = [message for message in messages if not message.read]
+        return sorted(messages, key=lambda message: message.created_at)[:limit]
+
     def list_messages_for_agent(self, agent_id: str, unread_only: bool = False, limit: int = 20) -> list[AgentMessage]:
         messages = [message for message in self._list("message", AgentMessage) if message.agent_id == agent_id]
         if unread_only:
@@ -114,6 +120,12 @@ class SQLiteStore:
     def get_proposal(self, proposal_id: str) -> OrderProposal | None:
         return self._get("proposal", proposal_id, OrderProposal)
 
+    def list_proposals(self, status: str | None = None, limit: int = 50) -> list[OrderProposal]:
+        proposals = self._list("proposal", OrderProposal)
+        if status is not None:
+            proposals = [proposal for proposal in proposals if proposal.status == status]
+        return sorted(proposals, key=lambda proposal: proposal.created_at, reverse=True)[:limit]
+
     def save_proposal(self, proposal: OrderProposal) -> OrderProposal:
         self._put("proposal", proposal.id, proposal)
         return proposal
@@ -124,6 +136,13 @@ class SQLiteStore:
 
     def get_broker_order(self, broker_order_id: str) -> BrokerOrderSnapshot | None:
         return self._get("broker_order", broker_order_id, BrokerOrderSnapshot)
+
+    def list_broker_orders(self, limit: int = 50) -> list[BrokerOrderSnapshot]:
+        return sorted(
+            self._list("broker_order", BrokerOrderSnapshot),
+            key=lambda snapshot: snapshot.observed_at,
+            reverse=True,
+        )[:limit]
 
     def save_position(self, position: PortfolioPosition) -> PortfolioPosition:
         self._put("position", position.symbol.upper(), position)

@@ -79,3 +79,32 @@ def test_sqlite_store_persists_audit_events(tmp_path):
 
     assert events[0]["event_type"] == "agent_registered"
     assert events[0]["payload"]["agent_id"] == agent.id
+
+
+def test_sqlite_store_lists_proposals_and_messages(tmp_path):
+    db_path = tmp_path / "platform.db"
+    store = SQLiteStore(db_path)
+    agent_os = AgentOS(store)
+    agent = agent_os.register_agent(Agent(name="query-persist-agent", role=AgentRole.MONITORING))
+    message = agent_os.send_message(AgentMessage(agent_id=agent.id, kind="notice", content="hello"))
+    workflow = OrderWorkflow(
+        store,
+        RiskEngine(),
+        MockRobinhoodGateway(),
+        ExecutionPolicy(ExecutionPolicyConfig(allow_auto_submit=True)),
+    )
+    proposal = workflow.create_proposal(
+        OrderProposalCreate(
+            agent_id=agent.id,
+            symbol="AAPL",
+            side=OrderSide.BUY,
+            quantity=1,
+            order_type=OrderType.LIMIT,
+            limit_price=100,
+        )
+    )
+
+    reloaded = SQLiteStore(db_path)
+
+    assert reloaded.list_messages()[0].id == message.id
+    assert reloaded.list_proposals()[0].id == proposal.id

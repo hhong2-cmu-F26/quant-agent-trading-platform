@@ -73,12 +73,38 @@ async def register_agent(agent: Agent) -> Agent:
         raise bad_request(exc) from exc
 
 
+@app.get("/agents")
+async def list_agents() -> dict:
+    return {"agents": repository.list_agents()}
+
+
+@app.get("/agents/{agent_id}")
+async def get_agent(agent_id: str):
+    agent = repository.get_agent(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="agent not found")
+    return agent
+
+
 @app.post("/agents/tasks", response_model=AgentTask)
 async def create_task(task: AgentTask) -> AgentTask:
     try:
         return agent_os.create_task(task)
     except ValueError as exc:
         raise bad_request(exc) from exc
+
+
+@app.get("/agents/tasks")
+async def list_tasks(status: str | None = None, limit: int = 50) -> dict:
+    return {"tasks": repository.list_tasks(status=status, limit=limit)}
+
+
+@app.get("/agents/tasks/{task_id}")
+async def get_task(task_id: str):
+    task = repository.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="task not found")
+    return task
 
 
 @app.post("/agents/messages", response_model=AgentMessage)
@@ -89,12 +115,31 @@ async def send_message(message: AgentMessage) -> AgentMessage:
         raise bad_request(exc) from exc
 
 
+@app.get("/agents/messages")
+async def list_messages(unread_only: bool = False, limit: int = 50) -> dict:
+    return {"messages": repository.list_messages(unread_only=unread_only, limit=limit)}
+
+
 @app.post("/agents/{agent_id}/heartbeat")
 async def heartbeat(agent_id: str) -> dict:
     try:
         return agent_os.heartbeat(agent_id)
     except ValueError as exc:
         raise bad_request(exc) from exc
+
+
+@app.get("/agents/{agent_id}/tasks")
+async def list_agent_tasks(agent_id: str, status: str | None = None, limit: int = 50) -> dict:
+    if not repository.get_agent(agent_id):
+        raise HTTPException(status_code=404, detail="agent not found")
+    return {"tasks": repository.list_tasks_for_agent(agent_id, status=status, limit=limit)}
+
+
+@app.get("/agents/{agent_id}/messages")
+async def list_agent_messages(agent_id: str, unread_only: bool = False, limit: int = 50) -> dict:
+    if not repository.get_agent(agent_id):
+        raise HTTPException(status_code=404, detail="agent not found")
+    return {"messages": repository.list_messages_for_agent(agent_id, unread_only=unread_only, limit=limit)}
 
 
 @app.post("/worker/run-once")
@@ -108,6 +153,19 @@ async def create_order_proposal(request: OrderProposalCreate):
         return order_workflow.create_proposal(request)
     except ValueError as exc:
         raise bad_request(exc) from exc
+
+
+@app.get("/orders/proposals")
+async def list_order_proposals(status: str | None = None, limit: int = 50) -> dict:
+    return {"proposals": repository.list_proposals(status=status, limit=limit)}
+
+
+@app.get("/orders/proposals/{proposal_id}")
+async def get_order_proposal(proposal_id: str):
+    proposal = repository.get_proposal(proposal_id)
+    if not proposal:
+        raise HTTPException(status_code=404, detail="proposal not found")
+    return proposal
 
 
 @app.post("/orders/proposals/{proposal_id}/risk-review")
@@ -166,6 +224,28 @@ async def reconcile_order(snapshot: BrokerOrderSnapshot):
 @app.get("/portfolio/positions")
 async def list_positions() -> dict:
     return {"positions": repository.list_positions()}
+
+
+@app.get("/broker/orders")
+async def list_broker_orders(limit: int = 50) -> dict:
+    return {"broker_orders": repository.list_broker_orders(limit=limit)}
+
+
+@app.get("/dashboard/summary")
+async def dashboard_summary() -> dict:
+    pending_tasks = repository.list_tasks(status="pending", limit=1_000)
+    running_tasks = repository.list_tasks(status="running", limit=1_000)
+    proposals = repository.list_proposals(limit=1_000)
+    positions = repository.list_positions()
+    return {
+        "agent_count": len(repository.list_agents()),
+        "pending_task_count": len(pending_tasks),
+        "running_task_count": len(running_tasks),
+        "proposal_count": len(proposals),
+        "open_position_count": len([position for position in positions if abs(position.quantity) > 1e-12]),
+        "recent_proposals": proposals[:10],
+        "positions": positions,
+    }
 
 
 @app.post("/quant/features")
