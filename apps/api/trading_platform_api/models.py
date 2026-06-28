@@ -59,6 +59,12 @@ class BrokerOrderStatus(str, Enum):
     FAILED = "failed"
 
 
+class TradabilityState(str, Enum):
+    TRADABLE = "tradable"
+    NOT_TRADABLE = "not_tradable"
+    UNKNOWN = "unknown"
+
+
 class Agent(BaseModel):
     id: str = Field(default_factory=lambda: new_id("agent"))
     name: str
@@ -123,6 +129,24 @@ class ExecutionPolicyDecision(BaseModel):
 class ExecutionReceipt(BaseModel):
     broker_order_id: str
     status: str
+    raw: dict[str, Any] = Field(default_factory=dict)
+
+
+class EquityQuote(BaseModel):
+    symbol: str
+    bid_price: float | None = None
+    ask_price: float | None = None
+    last_trade_price: float | None = None
+    previous_close: float | None = None
+    updated_at: datetime = Field(default_factory=utc_now)
+    raw: dict[str, Any] = Field(default_factory=dict)
+
+
+class EquityTradability(BaseModel):
+    symbol: str
+    state: TradabilityState = TradabilityState.UNKNOWN
+    reason: str | None = None
+    updated_at: datetime = Field(default_factory=utc_now)
     raw: dict[str, Any] = Field(default_factory=dict)
 
 

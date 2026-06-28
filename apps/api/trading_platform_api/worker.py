@@ -113,8 +113,9 @@ class QuantTaskHandlers:
 
 
 class MarketDataTaskHandlers:
-    def __init__(self, store: Repository):
+    def __init__(self, store: Repository, workflow: OrderWorkflow):
         self.store = store
+        self.workflow = workflow
         self.quality_checker = DataQualityChecker()
 
     def quality_check(self, task: AgentTask) -> dict[str, Any]:
@@ -131,6 +132,39 @@ class MarketDataTaskHandlers:
             max_staleness=max_staleness,
         )
         return report.model_dump(mode="json")
+
+    def quote_snapshot(self, task: AgentTask) -> dict[str, Any]:
+        symbols = self._symbols(task)
+        quotes = asyncio.run(self.workflow.broker.get_equity_quotes(symbols))
+        self.store.audit("broker_quotes_checked", symbols=[quote.symbol for quote in quotes], quote_count=len(quotes))
+        return {
+            "quote_count": len(quotes),
+            "quotes": [quote.model_dump(mode="json") for quote in quotes],
+        }
+
+    def tradability_check(self, task: AgentTask) -> dict[str, Any]:
+        symbols = self._symbols(task)
+        results = asyncio.run(self.workflow.broker.get_equity_tradability(symbols))
+        self.store.audit(
+            "broker_tradability_checked",
+            symbols=[result.symbol for result in results],
+            blocked=[result.symbol for result in results if result.state != "tradable"],
+        )
+        return {
+            "tradability_count": len(results),
+            "tradability": [result.model_dump(mode="json") for result in results],
+        }
+
+    def _symbols(self, task: AgentTask) -> list[str]:
+        payload_symbols = task.payload.get("symbols")
+        if isinstance(payload_symbols, list):
+            symbols = [str(symbol).strip().upper() for symbol in payload_symbols if str(symbol).strip()]
+        else:
+            symbol = str(task.payload.get("symbol") or "").strip().upper()
+            symbols = [symbol] if symbol else []
+        if not symbols:
+            raise ValueError("payload.symbols or payload.symbol is required")
+        return symbols
 
 
 class BacktestTaskHandlers:
@@ -208,12 +242,14 @@ class PortfolioTaskHandlers:
 def build_default_worker(store: Repository, workflow: OrderWorkflow) -> AgentTaskWorker:
     worker = AgentTaskWorker(store)
     quant_handlers = QuantTaskHandlers(workflow)
-    market_data_handlers = MarketDataTaskHandlers(store)
+    market_data_handlers = MarketDataTaskHandlers(store, workflow)
     backtest_handlers = BacktestTaskHandlers(store)
     scoring_handlers = StrategyScoringTaskHandlers(store)
     portfolio_handlers = PortfolioTaskHandlers(workflow)
     worker.register("quant.momentum_proposal", quant_handlers.momentum_proposal)
     worker.register("market_data.quality_check", market_data_handlers.quality_check)
+    worker.register("market_data.quote_snapshot", market_data_handlers.quote_snapshot)
+    worker.register("market_data.tradability_check", market_data_handlers.tradability_check)
     worker.register("backtest.momentum", backtest_handlers.momentum)
     worker.register("strategy.score_backtests", scoring_handlers.score_backtests)
     worker.register("portfolio.sync", portfolio_handlers.sync)

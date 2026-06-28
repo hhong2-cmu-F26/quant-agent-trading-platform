@@ -25,6 +25,25 @@ class FakeTransport:
                     {"instrument_symbol": "msft", "shares": "2", "average_buy_price": "410"},
                 ]
             }
+        if tool_name == "get_equity_quotes":
+            return {
+                "quotes": [
+                    {
+                        "symbol": "aapl",
+                        "bid_price": "189.90",
+                        "ask_price": "190.10",
+                        "last_trade_price": "190.00",
+                        "previous_close": "188.50",
+                    }
+                ]
+            }
+        if tool_name == "get_equity_tradability":
+            return {
+                "results": [
+                    {"symbol": "aapl", "tradable": True},
+                    {"symbol": "zzzz", "tradable": False, "reason": "unsupported"},
+                ]
+            }
         if tool_name == "review_equity_order":
             return {"approved": True, "estimated_notional": 200.0, "warnings": []}
         if tool_name == "cancel_equity_order":
@@ -81,4 +100,22 @@ def test_robinhood_gateway_parses_account_and_portfolio_payloads():
     assert [(position.symbol, position.quantity, position.average_price) for position in positions] == [
         ("AAPL", 4.0, 175.5),
         ("MSFT", 2.0, 410.0),
+    ]
+
+
+def test_robinhood_gateway_parses_quotes_and_tradability_payloads():
+    transport = FakeTransport()
+    gateway = RobinhoodMCPGateway(transport)
+
+    quotes = asyncio.run(gateway.get_equity_quotes(["aapl"]))
+    tradability = asyncio.run(gateway.get_equity_tradability(["aapl", "zzzz"]))
+
+    assert quotes[0].symbol == "AAPL"
+    assert quotes[0].bid_price == 189.9
+    assert quotes[0].ask_price == 190.1
+    assert tradability[0].state == "tradable"
+    assert tradability[1].state == "not_tradable"
+    assert transport.calls[-2:] == [
+        ("get_equity_quotes", {"symbols": ["AAPL"]}),
+        ("get_equity_tradability", {"symbols": ["AAPL", "ZZZZ"]}),
     ]

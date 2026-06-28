@@ -3,7 +3,17 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Protocol
 
-from .models import AccountState, BrokerReview, ExecutionReceipt, OrderProposal, OrderType, PortfolioPosition
+from .models import (
+    AccountState,
+    BrokerReview,
+    EquityQuote,
+    EquityTradability,
+    ExecutionReceipt,
+    OrderProposal,
+    OrderType,
+    PortfolioPosition,
+    TradabilityState,
+)
 
 
 class BrokerGateway(ABC):
@@ -13,6 +23,14 @@ class BrokerGateway(ABC):
 
     @abstractmethod
     async def get_positions(self) -> list[PortfolioPosition]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_equity_quotes(self, symbols: list[str]) -> list[EquityQuote]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_equity_tradability(self, symbols: list[str]) -> list[EquityTradability]:
         raise NotImplementedError
 
     @abstractmethod
@@ -45,6 +63,30 @@ class MockRobinhoodGateway(BrokerGateway):
     async def get_positions(self) -> list[PortfolioPosition]:
         return self.positions
 
+    async def get_equity_quotes(self, symbols: list[str]) -> list[EquityQuote]:
+        return [
+            EquityQuote(
+                symbol=symbol.strip().upper(),
+                bid_price=99.95,
+                ask_price=100.05,
+                last_trade_price=100.0,
+                previous_close=99.5,
+                raw={"adapter": "mock_robinhood"},
+            )
+            for symbol in self._normalize_symbols(symbols)
+        ]
+
+    async def get_equity_tradability(self, symbols: list[str]) -> list[EquityTradability]:
+        return [
+            EquityTradability(
+                symbol=symbol,
+                state=TradabilityState.NOT_TRADABLE if symbol in {"ZZZZ"} else TradabilityState.TRADABLE,
+                reason="mock unavailable symbol" if symbol in {"ZZZZ"} else None,
+                raw={"adapter": "mock_robinhood"},
+            )
+            for symbol in self._normalize_symbols(symbols)
+        ]
+
     async def review_equity_order(self, proposal: OrderProposal) -> BrokerReview:
         estimated_notional = None
         warnings: list[str] = []
@@ -72,6 +114,14 @@ class MockRobinhoodGateway(BrokerGateway):
             status="cancelled",
             raw={"adapter": "mock_robinhood"},
         )
+
+    def _normalize_symbols(self, symbols: list[str]) -> list[str]:
+        normalized = []
+        for symbol in symbols:
+            parsed = symbol.strip().upper()
+            if parsed:
+                normalized.append(parsed)
+        return normalized
 
 
 class MCPTransport(Protocol):
@@ -119,6 +169,57 @@ class RobinhoodMCPGateway(BrokerGateway):
                 )
             )
         return positions
+
+    async def get_equity_quotes(self, symbols: list[str]) -> list[EquityQuote]:
+        normalized = self._normalize_symbols(symbols)
+        raw = await self.transport.call_tool("get_equity_quotes", {"symbols": normalized})
+        items = raw.get("quotes") or raw.get("results") or raw.get("items") or []
+        if isinstance(items, dict):
+            items = [items]
+        quotes: list[EquityQuote] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            symbol = str(item.get("symbol") or item.get("ticker") or "").strip().upper()
+            if not symbol:
+                continue
+            quotes.append(
+                EquityQuote(
+                    symbol=symbol,
+                    bid_price=self._optional_float(item, "bid_price", "bid", "bidPrice"),
+                    ask_price=self._optional_float(item, "ask_price", "ask", "askPrice"),
+                    last_trade_price=self._optional_float(item, "last_trade_price", "last", "lastPrice", "mark_price"),
+                    previous_close=self._optional_float(item, "previous_close", "previousClose"),
+                    raw=item,
+                )
+            )
+        return quotes
+
+    async def get_equity_tradability(self, symbols: list[str]) -> list[EquityTradability]:
+        normalized = self._normalize_symbols(symbols)
+        raw = await self.transport.call_tool("get_equity_tradability", {"symbols": normalized})
+        items = raw.get("tradability") or raw.get("results") or raw.get("items") or []
+        if isinstance(items, dict):
+            items = [items]
+        results: list[EquityTradability] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            symbol = str(item.get("symbol") or item.get("ticker") or "").strip().upper()
+            if not symbol:
+                continue
+            raw_state = str(item.get("state") or item.get("tradability") or item.get("status") or "").lower()
+            tradable = item.get("tradable")
+            state = self._tradability_state(raw_state, tradable)
+            results.append(
+                EquityTradability(
+                    symbol=symbol,
+                    state=state,
+                    reason=item.get("reason") or item.get("message"),
+                    raw=item,
+                )
+            )
+        return results
 
     async def review_equity_order(self, proposal: OrderProposal) -> BrokerReview:
         raw = await self.transport.call_tool("review_equity_order", self._equity_order_args(proposal))
@@ -184,3 +285,29 @@ class RobinhoodMCPGateway(BrokerGateway):
             if value is not None:
                 return float(value)
         return 0.0
+
+    def _optional_float(self, payload: dict[str, Any], *keys: str) -> float | None:
+        for key in keys:
+            value = payload.get(key)
+            if value is not None:
+                return float(value)
+        return None
+
+    def _normalize_symbols(self, symbols: list[str]) -> list[str]:
+        normalized = []
+        for symbol in symbols:
+            parsed = symbol.strip().upper()
+            if parsed:
+                normalized.append(parsed)
+        if not normalized:
+            raise ValueError("at least one symbol is required")
+        return normalized
+
+    def _tradability_state(self, raw_state: str, tradable: Any) -> TradabilityState:
+        if isinstance(tradable, bool):
+            return TradabilityState.TRADABLE if tradable else TradabilityState.NOT_TRADABLE
+        if raw_state in {"tradable", "tradeable", "active", "ok"}:
+            return TradabilityState.TRADABLE
+        if raw_state in {"not_tradable", "not_tradeable", "inactive", "halted", "blocked"}:
+            return TradabilityState.NOT_TRADABLE
+        return TradabilityState.UNKNOWN

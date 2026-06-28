@@ -95,6 +95,8 @@ The durable worker understands these task kinds:
 
 ```text
 portfolio.sync
+market_data.quote_snapshot
+market_data.tradability_check
 market_data.quality_check
 quant.momentum_proposal
 backtest.momentum

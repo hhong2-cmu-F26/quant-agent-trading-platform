@@ -110,6 +110,22 @@ export type StrategyScore = {
   reasons: string[];
 };
 
+export type EquityQuote = {
+  symbol: string;
+  bid_price?: number | null;
+  ask_price?: number | null;
+  last_trade_price?: number | null;
+  previous_close?: number | null;
+  updated_at: string;
+};
+
+export type EquityTradability = {
+  symbol: string;
+  state: string;
+  reason?: string | null;
+  updated_at: string;
+};
+
 export type WorkerRunSummary = {
   processed: number;
   succeeded: number;
@@ -178,4 +194,12 @@ export async function syncPortfolio() {
 
 export async function cancelOrderProposal(proposalId: string) {
   return postJson<OrderProposal>(`/orders/proposals/${proposalId}/cancel`, {});
+}
+
+export async function fetchBrokerQuotes(symbols: string[]) {
+  return postJson<{ quotes: EquityQuote[] }>("/broker/quotes", { symbols });
+}
+
+export async function fetchBrokerTradability(symbols: string[]) {
+  return postJson<{ tradability: EquityTradability[] }>("/broker/tradability", { symbols });
 }

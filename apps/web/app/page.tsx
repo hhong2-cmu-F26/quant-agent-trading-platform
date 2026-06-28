@@ -9,6 +9,7 @@ import {
   ClipboardCheck,
   LineChart,
   ListChecks,
+  Search,
   RefreshCw,
   RefreshCcw,
   ShieldCheck,
@@ -19,9 +20,13 @@ import { useEffect, useMemo, useState } from "react";
 import {
   loadDashboardData,
   cancelOrderProposal,
+  fetchBrokerQuotes,
+  fetchBrokerTradability,
   runWorkerOnce,
   syncPortfolio,
   type DashboardSummary,
+  type EquityQuote,
+  type EquityTradability,
   type PortfolioSyncResult,
   type WorkerRunSummary
 } from "../lib/api";
@@ -281,6 +286,27 @@ function Orders({ data, onCancel, cancellingProposalId }: { data: DashboardData;
 }
 
 function Research({ data }: { data: DashboardData }) {
+  const [symbolsText, setSymbolsText] = useState("AAPL,MSFT");
+  const [quotes, setQuotes] = useState<EquityQuote[]>([]);
+  const [tradability, setTradability] = useState<EquityTradability[]>([]);
+  const [checking, setChecking] = useState(false);
+
+  async function checkBrokerSymbols() {
+    const symbols = symbolsText.split(",").map((symbol) => symbol.trim()).filter(Boolean);
+    if (!symbols.length) return;
+    setChecking(true);
+    try {
+      const [quoteResult, tradabilityResult] = await Promise.all([
+        fetchBrokerQuotes(symbols),
+        fetchBrokerTradability(symbols)
+      ]);
+      setQuotes(quoteResult.quotes);
+      setTradability(tradabilityResult.tradability);
+    } finally {
+      setChecking(false);
+    }
+  }
+
   return (
     <div className="grid two">
       <Panel title="Strategy Scores" icon={<LineChart />}>
@@ -330,6 +356,40 @@ function Research({ data }: { data: DashboardData }) {
                 <td>{time(record.created_at)}</td>
               </tr>
             ))}
+          </tbody>
+        </table>
+      </Panel>
+      <Panel title="Broker Symbol Check" icon={<Search />}>
+        <div className="inlineForm">
+          <input value={symbolsText} onChange={(event) => setSymbolsText(event.target.value)} aria-label="Symbols" />
+          <button className="actionButton" onClick={checkBrokerSymbols} disabled={checking} type="button">
+            <Search size={16} />
+            {checking ? "Checking" : "Check"}
+          </button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Bid</th>
+              <th>Ask</th>
+              <th>Last</th>
+              <th>Tradability</th>
+            </tr>
+          </thead>
+          <tbody>
+            {quotes.map((quote) => {
+              const state = tradability.find((item) => item.symbol === quote.symbol);
+              return (
+                <tr key={quote.symbol}>
+                  <td>{quote.symbol}</td>
+                  <td>{money(quote.bid_price)}</td>
+                  <td>{money(quote.ask_price)}</td>
+                  <td>{money(quote.last_trade_price)}</td>
+                  <td><Badge value={state?.state ?? "unknown"} /></td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </Panel>

@@ -200,3 +200,44 @@ def test_worker_can_sync_portfolio_from_broker():
     assert completed.result["account"]["buying_power"] == 25_000
     assert completed.result["position_count"] == 1
     assert store.get_position("AAPL").quantity == 2
+
+
+def test_worker_can_fetch_broker_quotes():
+    store, agent_os, worker = build_worker_context()
+    agent = agent_os.register_agent(Agent(name="quote-agent", role=AgentRole.MARKET_RESEARCH))
+    task = agent_os.create_task(
+        AgentTask(
+            agent_id=agent.id,
+            kind="market_data.quote_snapshot",
+            payload={"symbols": ["aapl", "msft"]},
+        )
+    )
+
+    summary = worker.run_once()
+    completed = store.get_task(task.id)
+
+    assert summary.succeeded == 1
+    assert completed.status == "completed"
+    assert completed.result["quote_count"] == 2
+    assert completed.result["quotes"][0]["symbol"] == "AAPL"
+
+
+def test_worker_can_check_broker_tradability():
+    store, agent_os, worker = build_worker_context()
+    agent = agent_os.register_agent(Agent(name="tradability-agent", role=AgentRole.RISK))
+    task = agent_os.create_task(
+        AgentTask(
+            agent_id=agent.id,
+            kind="market_data.tradability_check",
+            payload={"symbols": ["aapl", "zzzz"]},
+        )
+    )
+
+    summary = worker.run_once()
+    completed = store.get_task(task.id)
+
+    assert summary.succeeded == 1
+    assert completed.status == "completed"
+    assert completed.result["tradability_count"] == 2
+    assert completed.result["tradability"][0]["state"] == "tradable"
+    assert completed.result["tradability"][1]["state"] == "not_tradable"

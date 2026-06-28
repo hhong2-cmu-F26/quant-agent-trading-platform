@@ -89,6 +89,10 @@ class PriceBarsRequest(BaseModel):
     bars: list[PriceBar]
 
 
+class SymbolsRequest(BaseModel):
+    symbols: list[str]
+
+
 class MomentumBacktestRequest(BaseModel):
     bars: list[PriceBar]
     lookback: int = 20
@@ -318,6 +322,22 @@ async def update_account(account: AccountState):
 @app.get("/broker/orders")
 async def list_broker_orders(limit: int = 50) -> dict:
     return {"broker_orders": repository.list_broker_orders(limit=limit)}
+
+
+@app.post("/broker/quotes")
+async def get_equity_quotes(request: SymbolsRequest):
+    try:
+        return {"quotes": await order_workflow.broker.get_equity_quotes(request.symbols)}
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
+@app.post("/broker/tradability")
+async def get_equity_tradability(request: SymbolsRequest):
+    try:
+        return {"tradability": await order_workflow.broker.get_equity_tradability(request.symbols)}
+    except ValueError as exc:
+        raise bad_request(exc) from exc
 
 
 @app.get("/dashboard/summary")

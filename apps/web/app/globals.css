@@ -291,6 +291,24 @@ code {
   padding: 12px;
 }
 
+.inlineForm {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.inlineForm input {
+  min-width: 0;
+  flex: 1;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+
 .rowCard {
   display: grid;
   grid-template-columns: minmax(120px, 1fr) minmax(120px, 0.8fr) minmax(120px, 0.8fr);
@@ -378,6 +396,10 @@ code {
 
   .rowCard {
     grid-template-columns: 1fr;
+  }
+
+  .inlineForm {
+    flex-direction: column;
   }
 
   th,
