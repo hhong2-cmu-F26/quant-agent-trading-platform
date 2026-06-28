@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
@@ -10,14 +13,16 @@ from .models import Agent, AgentMessage, AgentTask, OrderProposalCreate
 from .orders import OrderWorkflow
 from .paper import PaperTrade, PaperTradingEngine
 from .risk import RiskEngine
-from .store import store
+from .sqlite_store import SQLiteStore
 from .strategy import MomentumStrategy, MomentumStrategyConfig
 
 
 app = FastAPI(title="Quant Agent Trading Platform API")
 
-agent_os = AgentOS(store)
-order_workflow = OrderWorkflow(store, RiskEngine(), MockRobinhoodGateway())
+DEFAULT_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "trading_platform.db"
+repository = SQLiteStore(os.getenv("TRADING_PLATFORM_DB_PATH", str(DEFAULT_DB_PATH)))
+agent_os = AgentOS(repository)
+order_workflow = OrderWorkflow(repository, RiskEngine(), MockRobinhoodGateway())
 feature_engine = FeatureEngine()
 paper_engine = PaperTradingEngine()
 
@@ -124,7 +129,7 @@ async def submit(proposal_id: str):
 
 @app.get("/audit")
 async def audit_log() -> dict:
-    return {"events": store.audit_events}
+    return {"events": repository.list_audit_events()}
 
 
 @app.post("/quant/features")

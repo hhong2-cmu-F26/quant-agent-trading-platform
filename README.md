@@ -57,3 +57,15 @@ python -m venv .venv
 pip install -r requirements.txt
 uvicorn trading_platform_api.main:app --reload
 ```
+
+By default the API stores durable state in:
+
+```text
+apps/api/data/trading_platform.db
+```
+
+Override it with:
+
+```bash
+set TRADING_PLATFORM_DB_PATH=C:\path\to\platform.db
+```

@@ -15,6 +15,13 @@ Build a minimal backend that supports:
 
 This phase intentionally avoids direct live Robinhood placement until the ledger and risk flow are stable.
 
+Current status:
+
+- agent OS primitives exist for registration, messages, tasks, and heartbeat
+- order proposal state machine exists with risk review and mock broker submission
+- SQLite persistence is the default API repository
+- audit events are durable
+
 ## Phase 2: Quant Core
 
 Add:
