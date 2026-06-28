@@ -48,6 +48,15 @@ class FakeTransport:
             return {"approved": True, "estimated_notional": 200.0, "warnings": []}
         if tool_name == "cancel_equity_order":
             return {"order_id": arguments["order_id"], "status": "cancelled"}
+        if tool_name == "get_order":
+            return {
+                "order_id": arguments["order_id"],
+                "symbol": "AAPL",
+                "status": "filled",
+                "quantity": "2",
+                "filled_quantity": "2",
+                "average_fill_price": "101.25",
+            }
         return {"order_id": "rh_order_1", "status": "submitted"}
 
 
@@ -119,3 +128,25 @@ def test_robinhood_gateway_parses_quotes_and_tradability_payloads():
         ("get_equity_quotes", {"symbols": ["AAPL"]}),
         ("get_equity_tradability", {"symbols": ["AAPL", "ZZZZ"]}),
     ]
+
+
+def test_robinhood_gateway_parses_order_snapshot_payload():
+    transport = FakeTransport()
+    gateway = RobinhoodMCPGateway(transport)
+    proposal = OrderProposal(
+        agent_id="agent_1",
+        symbol="aapl",
+        side=OrderSide.BUY,
+        quantity=2,
+        order_type=OrderType.LIMIT,
+        limit_price=100,
+        execution={"broker_order_id": "rh_order_1", "status": "submitted", "raw": {}},
+    )
+
+    snapshot = asyncio.run(gateway.get_equity_order(proposal))
+
+    assert snapshot.broker_order_id == "rh_order_1"
+    assert snapshot.status == "filled"
+    assert snapshot.filled_quantity == 2
+    assert snapshot.average_fill_price == 101.25
+    assert transport.calls[-1] == ("get_order", {"order_id": "rh_order_1"})

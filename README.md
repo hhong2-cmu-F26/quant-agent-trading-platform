@@ -95,6 +95,7 @@ The durable worker understands these task kinds:
 
 ```text
 portfolio.sync
+broker.reconcile_submitted
 market_data.quote_snapshot
 market_data.tradability_check
 market_data.quality_check

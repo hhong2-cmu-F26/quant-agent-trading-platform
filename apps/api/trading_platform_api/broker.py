@@ -5,6 +5,8 @@ from typing import Any, Protocol
 
 from .models import (
     AccountState,
+    BrokerOrderSnapshot,
+    BrokerOrderStatus,
     BrokerReview,
     EquityQuote,
     EquityTradability,
@@ -45,6 +47,10 @@ class BrokerGateway(ABC):
     async def cancel_equity_order(self, broker_order_id: str) -> ExecutionReceipt:
         raise NotImplementedError
 
+    @abstractmethod
+    async def get_equity_order(self, proposal: OrderProposal) -> BrokerOrderSnapshot:
+        raise NotImplementedError
+
 
 class MockRobinhoodGateway(BrokerGateway):
     """Development adapter with Robinhood-like review/place boundaries."""
@@ -53,9 +59,11 @@ class MockRobinhoodGateway(BrokerGateway):
         self,
         account: AccountState | None = None,
         positions: list[PortfolioPosition] | None = None,
+        order_snapshots: dict[str, BrokerOrderSnapshot] | None = None,
     ):
         self.account = account or AccountState(buying_power=100_000, cash=100_000, equity=100_000)
         self.positions = positions or []
+        self.order_snapshots = order_snapshots or {}
 
     async def get_account(self) -> AccountState:
         return self.account
@@ -112,6 +120,23 @@ class MockRobinhoodGateway(BrokerGateway):
         return ExecutionReceipt(
             broker_order_id=broker_order_id,
             status="cancelled",
+            raw={"adapter": "mock_robinhood"},
+        )
+
+    async def get_equity_order(self, proposal: OrderProposal) -> BrokerOrderSnapshot:
+        if not proposal.execution:
+            raise ValueError("proposal has no broker order")
+        snapshot = self.order_snapshots.get(proposal.execution.broker_order_id)
+        if snapshot:
+            return snapshot
+        return BrokerOrderSnapshot(
+            broker_order_id=proposal.execution.broker_order_id,
+            proposal_id=proposal.id,
+            symbol=proposal.symbol,
+            side=proposal.side,
+            status=BrokerOrderStatus.SUBMITTED,
+            submitted_quantity=proposal.quantity,
+            filled_quantity=0,
             raw={"adapter": "mock_robinhood"},
         )
 
@@ -247,6 +272,23 @@ class RobinhoodMCPGateway(BrokerGateway):
             raw=raw,
         )
 
+    async def get_equity_order(self, proposal: OrderProposal) -> BrokerOrderSnapshot:
+        if not proposal.execution:
+            raise ValueError("proposal has no broker order")
+        raw = await self.transport.call_tool("get_order", {"order_id": proposal.execution.broker_order_id})
+        status = self._broker_order_status(str(raw.get("status") or raw.get("state") or "submitted"))
+        return BrokerOrderSnapshot(
+            broker_order_id=str(raw.get("order_id") or raw.get("id") or raw.get("broker_order_id") or proposal.execution.broker_order_id),
+            proposal_id=proposal.id,
+            symbol=str(raw.get("symbol") or proposal.symbol).upper(),
+            side=proposal.side,
+            status=status,
+            submitted_quantity=self._optional_float(raw, "submitted_quantity", "quantity", "qty") or proposal.quantity,
+            filled_quantity=self._optional_float(raw, "filled_quantity", "filled_qty", "cumulative_quantity") or 0.0,
+            average_fill_price=self._optional_float(raw, "average_fill_price", "avg_fill_price", "average_price"),
+            raw=raw,
+        )
+
     def _equity_order_args(self, proposal: OrderProposal) -> dict[str, Any]:
         if proposal.order_type == OrderType.LIMIT and proposal.limit_price is None:
             raise ValueError("limit orders require limit_price")
@@ -311,3 +353,19 @@ class RobinhoodMCPGateway(BrokerGateway):
         if raw_state in {"not_tradable", "not_tradeable", "inactive", "halted", "blocked"}:
             return TradabilityState.NOT_TRADABLE
         return TradabilityState.UNKNOWN
+
+    def _broker_order_status(self, raw_status: str) -> BrokerOrderStatus:
+        normalized = raw_status.lower()
+        if normalized in {"filled", "executed"}:
+            return BrokerOrderStatus.FILLED
+        if normalized in {"partially_filled", "partial", "part_filled"}:
+            return BrokerOrderStatus.PARTIALLY_FILLED
+        if normalized in {"cancelled", "canceled"}:
+            return BrokerOrderStatus.CANCELLED
+        if normalized in {"rejected"}:
+            return BrokerOrderStatus.REJECTED
+        if normalized in {"failed", "error"}:
+            return BrokerOrderStatus.FAILED
+        if normalized in {"pending", "queued"}:
+            return BrokerOrderStatus.PENDING
+        return BrokerOrderStatus.SUBMITTED

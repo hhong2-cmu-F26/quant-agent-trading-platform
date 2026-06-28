@@ -23,7 +23,9 @@ import {
   fetchBrokerQuotes,
   fetchBrokerTradability,
   runWorkerOnce,
+  syncBrokerOrders,
   syncPortfolio,
+  type BrokerOrderSyncResult,
   type DashboardSummary,
   type EquityQuote,
   type EquityTradability,
@@ -46,6 +48,8 @@ export default function DashboardPage() {
   const [workerRunning, setWorkerRunning] = useState(false);
   const [portfolioSync, setPortfolioSync] = useState<PortfolioSyncResult | null>(null);
   const [syncRunning, setSyncRunning] = useState(false);
+  const [orderSync, setOrderSync] = useState<BrokerOrderSyncResult | null>(null);
+  const [orderSyncRunning, setOrderSyncRunning] = useState(false);
   const [cancellingProposalId, setCancellingProposalId] = useState<string | null>(null);
 
   async function refresh() {
@@ -96,6 +100,20 @@ export default function DashboardPage() {
       setError(exc instanceof Error ? exc.message : "Unable to sync portfolio");
     } finally {
       setSyncRunning(false);
+    }
+  }
+
+  async function runOrderSync() {
+    setOrderSyncRunning(true);
+    setError(null);
+    try {
+      const result = await syncBrokerOrders(50);
+      setOrderSync(result);
+      await refresh();
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Unable to sync broker orders");
+    } finally {
+      setOrderSyncRunning(false);
     }
   }
 
@@ -152,6 +170,10 @@ export default function DashboardPage() {
           <RefreshCw size={16} />
           {syncRunning ? "Syncing" : "Sync Portfolio"}
         </button>
+        <button className="actionButton secondary" onClick={runOrderSync} disabled={orderSyncRunning} type="button">
+          <RefreshCw size={16} />
+          {orderSyncRunning ? "Syncing" : "Sync Orders"}
+        </button>
         {workerRun && (
           <span className="statusText">
             Worker {workerRun.processed} processed, {workerRun.failed} failed
@@ -160,6 +182,11 @@ export default function DashboardPage() {
         {portfolioSync && (
           <span className="statusText">
             Portfolio {portfolioSync.position_count} positions
+          </span>
+        )}
+        {orderSync && (
+          <span className="statusText">
+            Orders {orderSync.reconciled}/{orderSync.checked} reconciled
           </span>
         )}
         {error && (

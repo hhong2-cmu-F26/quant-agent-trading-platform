@@ -77,6 +77,7 @@ Current status:
 - submitted orders can be cancelled through the broker gateway boundary
 - `ExecutionPolicy` is now a final deterministic submit gate
 - `ReconciliationService` updates proposals and positions only from broker-observed order snapshots
+- submitted broker orders can be polled and reconciled through `/broker/sync-orders`
 - the production MCP transport is still intentionally not wired
 
 ## Phase 4: Frontend
@@ -110,6 +111,7 @@ Current status:
 
 - `worker_service.py` provides a reusable polling loop around the durable agent task worker
 - `portfolio.sync` persists broker-observed account and positions for risk checks
+- `broker.reconcile_submitted` polls submitted broker orders and reconciles fills
 - `market_data.quote_snapshot` and `market_data.tradability_check` expose broker market checks as durable tasks
 - worker service can run continuously or as a finite one-shot process for local checks and scheduled jobs
 - dashboard can trigger a worker batch through `/worker/run-once` and a broker portfolio sync through `/broker/sync-portfolio`

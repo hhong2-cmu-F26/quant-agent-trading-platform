@@ -138,6 +138,13 @@ export type PortfolioSyncResult = {
   position_count: number;
 };
 
+export type BrokerOrderSyncResult = {
+  checked: number;
+  reconciled: number;
+  skipped: Array<Record<string, unknown>>;
+  orders: Array<Record<string, unknown>>;
+};
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 async function getJson<T>(path: string): Promise<T> {
@@ -190,6 +197,10 @@ export async function runWorkerOnce(limit = 10) {
 
 export async function syncPortfolio() {
   return postJson<PortfolioSyncResult>("/broker/sync-portfolio", {});
+}
+
+export async function syncBrokerOrders(limit = 50) {
+  return postJson<BrokerOrderSyncResult>(`/broker/sync-orders?limit=${limit}`, {});
 }
 
 export async function cancelOrderProposal(proposalId: string) {

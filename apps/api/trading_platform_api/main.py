@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from .agent_os import AgentOS
 from .backtest import MomentumBacktestConfig, MomentumBacktestEngine, backtest_record_from_result
 from .broker import MockRobinhoodGateway
+from .broker_order_sync import BrokerOrderSyncService
 from .execution_policy import ExecutionPolicy, ExecutionPolicyConfig
 from .market_data import DataQualityChecker, FeatureEngine, PriceBar
 from .models import AccountState, Agent, AgentMessage, AgentTask, BrokerOrderSnapshot, OrderProposalCreate
@@ -51,6 +52,7 @@ quality_checker = DataQualityChecker()
 paper_engine = PaperTradingEngine()
 reconciliation_service = ReconciliationService(repository)
 portfolio_sync_service = PortfolioSyncService(repository, order_workflow.broker)
+broker_order_sync_service = BrokerOrderSyncService(repository, order_workflow.broker)
 task_worker = build_default_worker(repository, order_workflow)
 
 
@@ -220,6 +222,11 @@ async def run_worker_once(limit: int = 10):
 @app.post("/broker/sync-portfolio")
 async def sync_portfolio():
     return await portfolio_sync_service.sync()
+
+
+@app.post("/broker/sync-orders")
+async def sync_broker_orders(limit: int = 50):
+    return await broker_order_sync_service.sync_submitted(limit=limit)
 
 
 @app.post("/orders/proposals")

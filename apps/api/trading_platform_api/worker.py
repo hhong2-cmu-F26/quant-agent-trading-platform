@@ -8,6 +8,7 @@ import asyncio
 from datetime import timedelta
 
 from .backtest import MomentumBacktestConfig, MomentumBacktestEngine, backtest_record_from_result
+from .broker_order_sync import BrokerOrderSyncService
 from .market_data import DataQualityChecker, FeatureEngine, PriceBar
 from .models import AgentTask, utc_now
 from .orders import OrderWorkflow
@@ -239,6 +240,15 @@ class PortfolioTaskHandlers:
         }
 
 
+class BrokerTaskHandlers:
+    def __init__(self, workflow: OrderWorkflow):
+        self.order_sync = BrokerOrderSyncService(workflow.store, workflow.broker)
+
+    def reconcile_submitted(self, task: AgentTask) -> dict[str, Any]:
+        limit = int(task.payload.get("limit", 50))
+        return asyncio.run(self.order_sync.sync_submitted(limit=limit))
+
+
 def build_default_worker(store: Repository, workflow: OrderWorkflow) -> AgentTaskWorker:
     worker = AgentTaskWorker(store)
     quant_handlers = QuantTaskHandlers(workflow)
@@ -246,6 +256,7 @@ def build_default_worker(store: Repository, workflow: OrderWorkflow) -> AgentTas
     backtest_handlers = BacktestTaskHandlers(store)
     scoring_handlers = StrategyScoringTaskHandlers(store)
     portfolio_handlers = PortfolioTaskHandlers(workflow)
+    broker_handlers = BrokerTaskHandlers(workflow)
     worker.register("quant.momentum_proposal", quant_handlers.momentum_proposal)
     worker.register("market_data.quality_check", market_data_handlers.quality_check)
     worker.register("market_data.quote_snapshot", market_data_handlers.quote_snapshot)
@@ -253,4 +264,5 @@ def build_default_worker(store: Repository, workflow: OrderWorkflow) -> AgentTas
     worker.register("backtest.momentum", backtest_handlers.momentum)
     worker.register("strategy.score_backtests", scoring_handlers.score_backtests)
     worker.register("portfolio.sync", portfolio_handlers.sync)
+    worker.register("broker.reconcile_submitted", broker_handlers.reconcile_submitted)
     return worker

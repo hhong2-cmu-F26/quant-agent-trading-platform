@@ -11,7 +11,18 @@ from trading_platform_api.backtest import MomentumBacktestConfig, MomentumBackte
 from trading_platform_api.broker import MockRobinhoodGateway
 from trading_platform_api.execution_policy import ExecutionPolicy, ExecutionPolicyConfig
 from trading_platform_api.market_data import PriceBar
-from trading_platform_api.models import AccountState, Agent, AgentRole, AgentTask, PortfolioPosition
+from trading_platform_api.models import (
+    AccountState,
+    Agent,
+    AgentRole,
+    AgentTask,
+    BrokerOrderSnapshot,
+    BrokerOrderStatus,
+    OrderProposalCreate,
+    OrderSide,
+    OrderType,
+    PortfolioPosition,
+)
 from trading_platform_api.orders import OrderWorkflow
 from trading_platform_api.risk import RiskEngine
 from trading_platform_api.store import InMemoryStore
@@ -48,11 +59,11 @@ def build_worker_context():
         ExecutionPolicy(ExecutionPolicyConfig(allow_auto_submit=True)),
     )
     worker = build_default_worker(store, workflow)
-    return store, agent_os, worker
+    return store, agent_os, worker, workflow, broker
 
 
 def test_worker_processes_momentum_task_and_creates_order_proposal():
-    store, agent_os, worker = build_worker_context()
+    store, agent_os, worker, _, _ = build_worker_context()
     agent = agent_os.register_agent(Agent(name="quant-worker-agent", role=AgentRole.QUANT_RESEARCH))
     task = agent_os.create_task(
         AgentTask(
@@ -78,7 +89,7 @@ def test_worker_processes_momentum_task_and_creates_order_proposal():
 
 
 def test_worker_marks_unknown_task_kind_failed():
-    store, agent_os, worker = build_worker_context()
+    store, agent_os, worker, _, _ = build_worker_context()
     agent = agent_os.register_agent(Agent(name="bad-task-agent", role=AgentRole.MONITORING))
     task = agent_os.create_task(AgentTask(agent_id=agent.id, kind="unknown.kind"))
 
@@ -91,7 +102,7 @@ def test_worker_marks_unknown_task_kind_failed():
 
 
 def test_worker_can_create_momentum_proposal_from_stored_bars():
-    store, agent_os, worker = build_worker_context()
+    store, agent_os, worker, _, _ = build_worker_context()
     store.save_price_bars([PriceBar.model_validate(item) for item in bar_payload()])
     agent = agent_os.register_agent(Agent(name="stored-bars-agent", role=AgentRole.QUANT_RESEARCH))
     task = agent_os.create_task(
@@ -116,7 +127,7 @@ def test_worker_can_create_momentum_proposal_from_stored_bars():
 
 
 def test_worker_can_run_market_data_quality_check():
-    store, agent_os, worker = build_worker_context()
+    store, agent_os, worker, _, _ = build_worker_context()
     store.save_price_bars([PriceBar.model_validate(item) for item in bar_payload()])
     agent = agent_os.register_agent(Agent(name="quality-agent", role=AgentRole.DATA_QUALITY))
     task = agent_os.create_task(
@@ -137,7 +148,7 @@ def test_worker_can_run_market_data_quality_check():
 
 
 def test_worker_can_run_momentum_backtest_from_stored_bars():
-    store, agent_os, worker = build_worker_context()
+    store, agent_os, worker, _, _ = build_worker_context()
     store.save_price_bars([PriceBar.model_validate(item) for item in bar_payload()])
     agent = agent_os.register_agent(Agent(name="backtest-agent", role=AgentRole.BACKTEST))
     task = agent_os.create_task(
@@ -164,7 +175,7 @@ def test_worker_can_run_momentum_backtest_from_stored_bars():
 
 
 def test_worker_can_rank_persisted_backtests():
-    store, agent_os, worker = build_worker_context()
+    store, agent_os, worker, _, _ = build_worker_context()
     config = MomentumBacktestConfig(lookback=20, min_momentum=0.01, target_notional=1_000)
     result = MomentumBacktestEngine(config).run([PriceBar.model_validate(item) for item in bar_payload()])
     store.save_backtest(backtest_record_from_result(result, config))
@@ -188,7 +199,7 @@ def test_worker_can_rank_persisted_backtests():
 
 
 def test_worker_can_sync_portfolio_from_broker():
-    store, agent_os, worker = build_worker_context()
+    store, agent_os, worker, _, _ = build_worker_context()
     agent = agent_os.register_agent(Agent(name="portfolio-agent", role=AgentRole.MONITORING))
     task = agent_os.create_task(AgentTask(agent_id=agent.id, kind="portfolio.sync"))
 
@@ -203,7 +214,7 @@ def test_worker_can_sync_portfolio_from_broker():
 
 
 def test_worker_can_fetch_broker_quotes():
-    store, agent_os, worker = build_worker_context()
+    store, agent_os, worker, _, _ = build_worker_context()
     agent = agent_os.register_agent(Agent(name="quote-agent", role=AgentRole.MARKET_RESEARCH))
     task = agent_os.create_task(
         AgentTask(
@@ -223,7 +234,7 @@ def test_worker_can_fetch_broker_quotes():
 
 
 def test_worker_can_check_broker_tradability():
-    store, agent_os, worker = build_worker_context()
+    store, agent_os, worker, _, _ = build_worker_context()
     agent = agent_os.register_agent(Agent(name="tradability-agent", role=AgentRole.RISK))
     task = agent_os.create_task(
         AgentTask(
@@ -241,3 +252,44 @@ def test_worker_can_check_broker_tradability():
     assert completed.result["tradability_count"] == 2
     assert completed.result["tradability"][0]["state"] == "tradable"
     assert completed.result["tradability"][1]["state"] == "not_tradable"
+
+
+def test_worker_can_reconcile_submitted_broker_orders():
+    import asyncio
+
+    store, agent_os, worker, workflow, broker = build_worker_context()
+    execution_agent = agent_os.register_agent(Agent(name="execution-agent", role=AgentRole.EXECUTION))
+    proposal = workflow.create_proposal(
+        OrderProposalCreate(
+            agent_id=execution_agent.id,
+            symbol="AAPL",
+            side=OrderSide.BUY,
+            quantity=2,
+            order_type=OrderType.LIMIT,
+            limit_price=100,
+        )
+    )
+    workflow.risk_review(proposal.id)
+    asyncio.run(workflow.broker_review(proposal.id))
+    workflow.approve_for_execution(proposal.id)
+    submitted = asyncio.run(workflow.submit(proposal.id))
+    broker.order_snapshots[submitted.execution.broker_order_id] = BrokerOrderSnapshot(
+        broker_order_id=submitted.execution.broker_order_id,
+        proposal_id=submitted.id,
+        symbol="AAPL",
+        side=OrderSide.BUY,
+        status=BrokerOrderStatus.FILLED,
+        submitted_quantity=2,
+        filled_quantity=2,
+        average_fill_price=101.25,
+    )
+    monitor_agent = agent_os.register_agent(Agent(name="broker-sync-agent", role=AgentRole.MONITORING))
+    task = agent_os.create_task(AgentTask(agent_id=monitor_agent.id, kind="broker.reconcile_submitted"))
+
+    summary = worker.run_once()
+    completed = store.get_task(task.id)
+
+    assert summary.succeeded == 1
+    assert completed.status == "completed"
+    assert completed.result["reconciled"] == 1
+    assert store.get_proposal(proposal.id).status == "filled"
