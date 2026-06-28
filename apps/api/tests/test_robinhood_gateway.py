@@ -16,6 +16,15 @@ class FakeTransport:
 
     async def call_tool(self, tool_name, arguments):
         self.calls.append((tool_name, arguments))
+        if tool_name == "get_accounts":
+            return {"accounts": [{"buying_power": "5000", "cash": "3500", "equity": "8000"}]}
+        if tool_name == "get_portfolio":
+            return {
+                "positions": [
+                    {"symbol": "aapl", "quantity": "4", "average_price": "175.50"},
+                    {"instrument_symbol": "msft", "shares": "2", "average_buy_price": "410"},
+                ]
+            }
         if tool_name == "review_equity_order":
             return {"approved": True, "estimated_notional": 200.0, "warnings": []}
         return {"order_id": "rh_order_1", "status": "submitted"}
@@ -50,3 +59,18 @@ def test_robinhood_gateway_builds_review_and_place_payloads():
         ),
     ]
 
+
+def test_robinhood_gateway_parses_account_and_portfolio_payloads():
+    transport = FakeTransport()
+    gateway = RobinhoodMCPGateway(transport)
+
+    account = asyncio.run(gateway.get_account())
+    positions = asyncio.run(gateway.get_positions())
+
+    assert account.buying_power == 5_000
+    assert account.cash == 3_500
+    assert account.equity == 8_000
+    assert [(position.symbol, position.quantity, position.average_price) for position in positions] == [
+        ("AAPL", 4.0, 175.5),
+        ("MSFT", 2.0, 410.0),
+    ]

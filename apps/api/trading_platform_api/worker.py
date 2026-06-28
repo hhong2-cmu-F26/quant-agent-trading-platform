@@ -4,12 +4,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+import asyncio
 from datetime import timedelta
 
 from .backtest import MomentumBacktestConfig, MomentumBacktestEngine, backtest_record_from_result
 from .market_data import DataQualityChecker, FeatureEngine, PriceBar
 from .models import AgentTask, utc_now
 from .orders import OrderWorkflow
+from .portfolio_sync import PortfolioSyncService
 from .scoring import StrategyScorer, StrategyScoringConfig
 from .store import Repository
 from .strategy import MomentumStrategy, MomentumStrategyConfig
@@ -190,14 +192,29 @@ class StrategyScoringTaskHandlers:
         }
 
 
+class PortfolioTaskHandlers:
+    def __init__(self, workflow: OrderWorkflow):
+        self.sync_service = PortfolioSyncService(workflow.store, workflow.broker)
+
+    def sync(self, task: AgentTask) -> dict[str, Any]:
+        result = asyncio.run(self.sync_service.sync())
+        return {
+            "account": result["account"].model_dump(mode="json"),
+            "positions": [position.model_dump(mode="json") for position in result["positions"]],
+            "position_count": result["position_count"],
+        }
+
+
 def build_default_worker(store: Repository, workflow: OrderWorkflow) -> AgentTaskWorker:
     worker = AgentTaskWorker(store)
     quant_handlers = QuantTaskHandlers(workflow)
     market_data_handlers = MarketDataTaskHandlers(store)
     backtest_handlers = BacktestTaskHandlers(store)
     scoring_handlers = StrategyScoringTaskHandlers(store)
+    portfolio_handlers = PortfolioTaskHandlers(workflow)
     worker.register("quant.momentum_proposal", quant_handlers.momentum_proposal)
     worker.register("market_data.quality_check", market_data_handlers.quality_check)
     worker.register("backtest.momentum", backtest_handlers.momentum)
     worker.register("strategy.score_backtests", scoring_handlers.score_backtests)
+    worker.register("portfolio.sync", portfolio_handlers.sync)
     return worker

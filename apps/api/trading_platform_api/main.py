@@ -15,6 +15,7 @@ from .market_data import DataQualityChecker, FeatureEngine, PriceBar
 from .models import AccountState, Agent, AgentMessage, AgentTask, BrokerOrderSnapshot, OrderProposalCreate
 from .orders import OrderWorkflow
 from .paper import PaperTrade, PaperTradingEngine
+from .portfolio_sync import PortfolioSyncService
 from .reconciliation import ReconciliationService
 from .risk import PortfolioRiskEngine
 from .scoring import StrategyScorer, StrategyScoringConfig
@@ -49,6 +50,7 @@ feature_engine = FeatureEngine()
 quality_checker = DataQualityChecker()
 paper_engine = PaperTradingEngine()
 reconciliation_service = ReconciliationService(repository)
+portfolio_sync_service = PortfolioSyncService(repository, order_workflow.broker)
 task_worker = build_default_worker(repository, order_workflow)
 
 
@@ -209,6 +211,11 @@ async def run_worker_once(limit: int = 10):
         "succeeded": summary.succeeded,
         "failed": summary.failed,
     }
+
+
+@app.post("/broker/sync-portfolio")
+async def sync_portfolio():
+    return await portfolio_sync_service.sync()
 
 
 @app.post("/orders/proposals")

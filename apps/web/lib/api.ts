@@ -116,6 +116,12 @@ export type WorkerRunSummary = {
   failed: number;
 };
 
+export type PortfolioSyncResult = {
+  account: AccountState;
+  positions: PortfolioPosition[];
+  position_count: number;
+};
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 async function getJson<T>(path: string): Promise<T> {
@@ -164,4 +170,8 @@ export async function loadDashboardData() {
 
 export async function runWorkerOnce(limit = 10) {
   return postJson<WorkerRunSummary>(`/worker/run-once?limit=${limit}`, {});
+}
+
+export async function syncPortfolio() {
+  return postJson<PortfolioSyncResult>("/broker/sync-portfolio", {});
 }

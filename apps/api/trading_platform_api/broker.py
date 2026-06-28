@@ -3,10 +3,18 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Protocol
 
-from .models import BrokerReview, ExecutionReceipt, OrderProposal, OrderType
+from .models import AccountState, BrokerReview, ExecutionReceipt, OrderProposal, OrderType, PortfolioPosition
 
 
 class BrokerGateway(ABC):
+    @abstractmethod
+    async def get_account(self) -> AccountState:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_positions(self) -> list[PortfolioPosition]:
+        raise NotImplementedError
+
     @abstractmethod
     async def review_equity_order(self, proposal: OrderProposal) -> BrokerReview:
         raise NotImplementedError
@@ -18,6 +26,20 @@ class BrokerGateway(ABC):
 
 class MockRobinhoodGateway(BrokerGateway):
     """Development adapter with Robinhood-like review/place boundaries."""
+
+    def __init__(
+        self,
+        account: AccountState | None = None,
+        positions: list[PortfolioPosition] | None = None,
+    ):
+        self.account = account or AccountState(buying_power=100_000, cash=100_000, equity=100_000)
+        self.positions = positions or []
+
+    async def get_account(self) -> AccountState:
+        return self.account
+
+    async def get_positions(self) -> list[PortfolioPosition]:
+        return self.positions
 
     async def review_equity_order(self, proposal: OrderProposal) -> BrokerReview:
         estimated_notional = None
@@ -56,6 +78,36 @@ class RobinhoodMCPGateway(BrokerGateway):
 
     def __init__(self, transport: MCPTransport):
         self.transport = transport
+
+    async def get_account(self) -> AccountState:
+        raw = await self.transport.call_tool("get_accounts", {})
+        payload = self._first_payload(raw, "accounts")
+        return AccountState(
+            buying_power=self._float(payload, "buying_power", "buyingPower"),
+            cash=self._float(payload, "cash", "cash_balance", "cashBalance"),
+            equity=self._float(payload, "equity", "portfolio_value", "portfolioValue"),
+        )
+
+    async def get_positions(self) -> list[PortfolioPosition]:
+        raw = await self.transport.call_tool("get_portfolio", {})
+        items = raw.get("positions") or raw.get("results") or raw.get("portfolio") or []
+        if isinstance(items, dict):
+            items = items.get("positions") or items.get("results") or []
+        positions: list[PortfolioPosition] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            symbol = str(item.get("symbol") or item.get("instrument_symbol") or item.get("ticker") or "").strip()
+            if not symbol:
+                continue
+            positions.append(
+                PortfolioPosition(
+                    symbol=symbol.upper(),
+                    quantity=self._float(item, "quantity", "shares", "qty"),
+                    average_price=self._float(item, "average_price", "average_buy_price", "avgPrice"),
+                )
+            )
+        return positions
 
     async def review_equity_order(self, proposal: OrderProposal) -> BrokerReview:
         raw = await self.transport.call_tool("review_equity_order", self._equity_order_args(proposal))
@@ -100,3 +152,16 @@ class RobinhoodMCPGateway(BrokerGateway):
             raw=raw,
         )
 
+    def _first_payload(self, raw: dict[str, Any], list_key: str) -> dict[str, Any]:
+        items = raw.get(list_key)
+        if isinstance(items, list) and items:
+            first = items[0]
+            return first if isinstance(first, dict) else {}
+        return raw
+
+    def _float(self, payload: dict[str, Any], *keys: str) -> float:
+        for key in keys:
+            value = payload.get(key)
+            if value is not None:
+                return float(value)
+        return 0.0

@@ -101,6 +101,12 @@ h1 {
   opacity: 0.65;
 }
 
+.actionButton.secondary {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--text);
+}
+
 .statusBand {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

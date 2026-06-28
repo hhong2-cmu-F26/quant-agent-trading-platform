@@ -90,6 +90,16 @@ For a one-shot batch useful in local checks:
 python -m trading_platform_api.worker_service --max-iterations 1 --poll-interval 0
 ```
 
+The durable worker understands these task kinds:
+
+```text
+portfolio.sync
+market_data.quality_check
+quant.momentum_proposal
+backtest.momentum
+strategy.score_backtests
+```
+
 ## Run Frontend
 
 ```bash

@@ -8,13 +8,21 @@ import {
   ClipboardCheck,
   LineChart,
   ListChecks,
+  RefreshCw,
   RefreshCcw,
   ShieldCheck,
   TerminalSquare,
   WalletCards
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { loadDashboardData, runWorkerOnce, type DashboardSummary, type WorkerRunSummary } from "../lib/api";
+import {
+  loadDashboardData,
+  runWorkerOnce,
+  syncPortfolio,
+  type DashboardSummary,
+  type PortfolioSyncResult,
+  type WorkerRunSummary
+} from "../lib/api";
 
 type DashboardData = Awaited<ReturnType<typeof loadDashboardData>>;
 
@@ -29,6 +37,8 @@ export default function DashboardPage() {
   const [updatedAt, setUpdatedAt] = useState<string>("");
   const [workerRun, setWorkerRun] = useState<WorkerRunSummary | null>(null);
   const [workerRunning, setWorkerRunning] = useState(false);
+  const [portfolioSync, setPortfolioSync] = useState<PortfolioSyncResult | null>(null);
+  const [syncRunning, setSyncRunning] = useState(false);
 
   async function refresh() {
     setLoading(true);
@@ -64,6 +74,20 @@ export default function DashboardPage() {
       setError(exc instanceof Error ? exc.message : "Unable to run worker");
     } finally {
       setWorkerRunning(false);
+    }
+  }
+
+  async function runPortfolioSync() {
+    setSyncRunning(true);
+    setError(null);
+    try {
+      const result = await syncPortfolio();
+      setPortfolioSync(result);
+      await refresh();
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Unable to sync portfolio");
+    } finally {
+      setSyncRunning(false);
     }
   }
 
@@ -103,9 +127,18 @@ export default function DashboardPage() {
           <TerminalSquare size={16} />
           {workerRunning ? "Running" : "Run Worker"}
         </button>
+        <button className="actionButton secondary" onClick={runPortfolioSync} disabled={syncRunning} type="button">
+          <RefreshCw size={16} />
+          {syncRunning ? "Syncing" : "Sync Portfolio"}
+        </button>
         {workerRun && (
           <span className="statusText">
             Worker {workerRun.processed} processed, {workerRun.failed} failed
+          </span>
+        )}
+        {portfolioSync && (
+          <span className="statusText">
+            Portfolio {portfolioSync.position_count} positions
           </span>
         )}
         {error && (

@@ -72,6 +72,7 @@ Current status:
 
 - `BrokerGateway` defines the broker boundary
 - `RobinhoodMCPGateway` owns Robinhood MCP tool names and equity order payloads
+- broker account and portfolio reads normalize into durable account/position state
 - `ExecutionPolicy` is now a final deterministic submit gate
 - `ReconciliationService` updates proposals and positions only from broker-observed order snapshots
 - the production MCP transport is still intentionally not wired
@@ -106,8 +107,9 @@ Add:
 Current status:
 
 - `worker_service.py` provides a reusable polling loop around the durable agent task worker
+- `portfolio.sync` persists broker-observed account and positions for risk checks
 - worker service can run continuously or as a finite one-shot process for local checks and scheduled jobs
-- dashboard can trigger a worker batch through `/worker/run-once`
+- dashboard can trigger a worker batch through `/worker/run-once` and a broker portfolio sync through `/broker/sync-portfolio`
 
 ## Agent Roles
 

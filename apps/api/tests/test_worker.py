@@ -11,7 +11,7 @@ from trading_platform_api.backtest import MomentumBacktestConfig, MomentumBackte
 from trading_platform_api.broker import MockRobinhoodGateway
 from trading_platform_api.execution_policy import ExecutionPolicy, ExecutionPolicyConfig
 from trading_platform_api.market_data import PriceBar
-from trading_platform_api.models import Agent, AgentRole, AgentTask
+from trading_platform_api.models import AccountState, Agent, AgentRole, AgentTask, PortfolioPosition
 from trading_platform_api.orders import OrderWorkflow
 from trading_platform_api.risk import RiskEngine
 from trading_platform_api.store import InMemoryStore
@@ -37,10 +37,14 @@ def bar_payload():
 def build_worker_context():
     store = InMemoryStore()
     agent_os = AgentOS(store)
+    broker = MockRobinhoodGateway(
+        account=AccountState(buying_power=25_000, cash=20_000, equity=30_000),
+        positions=[PortfolioPosition(symbol="AAPL", quantity=2, average_price=150)],
+    )
     workflow = OrderWorkflow(
         store,
         RiskEngine(),
-        MockRobinhoodGateway(),
+        broker,
         ExecutionPolicy(ExecutionPolicyConfig(allow_auto_submit=True)),
     )
     worker = build_default_worker(store, workflow)
@@ -181,3 +185,18 @@ def test_worker_can_rank_persisted_backtests():
     assert completed.result["score_count"] == 1
     assert completed.result["scores"][0]["rank"] == 1
     assert completed.result["scores"][0]["symbol"] == "AAPL"
+
+
+def test_worker_can_sync_portfolio_from_broker():
+    store, agent_os, worker = build_worker_context()
+    agent = agent_os.register_agent(Agent(name="portfolio-agent", role=AgentRole.MONITORING))
+    task = agent_os.create_task(AgentTask(agent_id=agent.id, kind="portfolio.sync"))
+
+    summary = worker.run_once()
+    completed = store.get_task(task.id)
+
+    assert summary.succeeded == 1
+    assert completed.status == "completed"
+    assert completed.result["account"]["buying_power"] == 25_000
+    assert completed.result["position_count"] == 1
+    assert store.get_position("AAPL").quantity == 2
