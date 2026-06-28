@@ -18,6 +18,8 @@ This phase intentionally avoids direct live Robinhood placement until the ledger
 Current status:
 
 - agent OS primitives exist for registration, messages, tasks, and heartbeat
+- worker primitives exist for processing durable pending tasks
+- `quant.momentum_proposal` can turn bar data into an order proposal
 - order proposal state machine exists with risk review and mock broker submission
 - SQLite persistence is the default API repository
 - audit events are durable

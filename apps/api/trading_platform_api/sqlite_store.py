@@ -74,6 +74,12 @@ class SQLiteStore:
     def get_task(self, task_id: str) -> AgentTask | None:
         return self._get("task", task_id, AgentTask)
 
+    def list_tasks(self, status: str | None = None, limit: int = 20) -> list[AgentTask]:
+        tasks = self._list("task", AgentTask)
+        if status is not None:
+            tasks = [task for task in tasks if task.status == status]
+        return sorted(tasks, key=lambda task: task.created_at)[:limit]
+
     def list_tasks_for_agent(self, agent_id: str, status: str | None = None, limit: int = 20) -> list[AgentTask]:
         tasks = [task for task in self._list("task", AgentTask) if task.agent_id == agent_id]
         if status is not None:

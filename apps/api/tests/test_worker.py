@@ -1,0 +1,85 @@
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+API_DIR = Path(__file__).resolve().parents[1]
+if str(API_DIR) not in sys.path:
+    sys.path.insert(0, str(API_DIR))
+
+from trading_platform_api.agent_os import AgentOS
+from trading_platform_api.broker import MockRobinhoodGateway
+from trading_platform_api.execution_policy import ExecutionPolicy, ExecutionPolicyConfig
+from trading_platform_api.models import Agent, AgentRole, AgentTask
+from trading_platform_api.orders import OrderWorkflow
+from trading_platform_api.risk import RiskEngine
+from trading_platform_api.store import InMemoryStore
+from trading_platform_api.worker import build_default_worker
+
+
+def bar_payload():
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    return [
+        {
+            "symbol": "AAPL",
+            "timestamp": (start + timedelta(days=index)).isoformat(),
+            "open": 100 + index,
+            "high": 101 + index,
+            "low": 99 + index,
+            "close": 100 + index,
+            "volume": 1_000_000,
+        }
+        for index in range(30)
+    ]
+
+
+def build_worker_context():
+    store = InMemoryStore()
+    agent_os = AgentOS(store)
+    workflow = OrderWorkflow(
+        store,
+        RiskEngine(),
+        MockRobinhoodGateway(),
+        ExecutionPolicy(ExecutionPolicyConfig(allow_auto_submit=True)),
+    )
+    worker = build_default_worker(store, workflow)
+    return store, agent_os, worker
+
+
+def test_worker_processes_momentum_task_and_creates_order_proposal():
+    store, agent_os, worker = build_worker_context()
+    agent = agent_os.register_agent(Agent(name="quant-worker-agent", role=AgentRole.QUANT_RESEARCH))
+    task = agent_os.create_task(
+        AgentTask(
+            agent_id=agent.id,
+            kind="quant.momentum_proposal",
+            payload={
+                "bars": bar_payload(),
+                "lookback": 20,
+                "min_momentum": 0.01,
+                "target_notional": 1_000,
+            },
+        )
+    )
+
+    summary = worker.run_once()
+    completed = store.get_task(task.id)
+
+    assert summary.processed == 1
+    assert summary.succeeded == 1
+    assert completed.status == "completed"
+    assert completed.result["proposal_created"] is True
+    assert store.get_proposal(completed.result["proposal_id"]) is not None
+
+
+def test_worker_marks_unknown_task_kind_failed():
+    store, agent_os, worker = build_worker_context()
+    agent = agent_os.register_agent(Agent(name="bad-task-agent", role=AgentRole.MONITORING))
+    task = agent_os.create_task(AgentTask(agent_id=agent.id, kind="unknown.kind"))
+
+    summary = worker.run_once()
+    failed = store.get_task(task.id)
+
+    assert summary.failed == 1
+    assert failed.status == "failed"
+    assert "no handler registered" in failed.error
+

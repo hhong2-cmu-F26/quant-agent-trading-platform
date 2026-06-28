@@ -17,6 +17,7 @@ from .reconciliation import ReconciliationService
 from .risk import RiskEngine
 from .sqlite_store import SQLiteStore
 from .strategy import MomentumStrategy, MomentumStrategyConfig
+from .worker import build_default_worker
 
 
 app = FastAPI(title="Quant Agent Trading Platform API")
@@ -33,6 +34,7 @@ order_workflow = OrderWorkflow(
 feature_engine = FeatureEngine()
 paper_engine = PaperTradingEngine()
 reconciliation_service = ReconciliationService(repository)
+task_worker = build_default_worker(repository, order_workflow)
 
 
 class FeatureRequest(BaseModel):
@@ -93,6 +95,11 @@ async def heartbeat(agent_id: str) -> dict:
         return agent_os.heartbeat(agent_id)
     except ValueError as exc:
         raise bad_request(exc) from exc
+
+
+@app.post("/worker/run-once")
+async def run_worker_once(limit: int = 10):
+    return task_worker.run_once(limit=limit)
 
 
 @app.post("/orders/proposals")

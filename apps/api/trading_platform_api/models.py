@@ -72,8 +72,12 @@ class AgentTask(BaseModel):
     kind: str
     payload: dict[str, Any] = Field(default_factory=dict)
     status: str = "pending"
+    result: dict[str, Any] | None = None
+    error: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     read_at: datetime | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
 
 
 class AgentMessage(BaseModel):
