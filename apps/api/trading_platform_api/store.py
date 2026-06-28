@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Protocol
 
-from .models import Agent, AgentMessage, AgentTask, OrderProposal
+from .models import Agent, AgentMessage, AgentTask, BrokerOrderSnapshot, OrderProposal, PortfolioPosition
 
 
 class Repository(Protocol):
@@ -22,6 +22,11 @@ class Repository(Protocol):
     def add_proposal(self, proposal: OrderProposal) -> OrderProposal: ...
     def get_proposal(self, proposal_id: str) -> OrderProposal | None: ...
     def save_proposal(self, proposal: OrderProposal) -> OrderProposal: ...
+    def save_broker_order(self, snapshot: BrokerOrderSnapshot) -> BrokerOrderSnapshot: ...
+    def get_broker_order(self, broker_order_id: str) -> BrokerOrderSnapshot | None: ...
+    def save_position(self, position: PortfolioPosition) -> PortfolioPosition: ...
+    def get_position(self, symbol: str) -> PortfolioPosition | None: ...
+    def list_positions(self) -> list[PortfolioPosition]: ...
     def audit(self, event_type: str, **payload) -> None: ...
     def list_audit_events(self) -> list[dict]: ...
 
@@ -32,6 +37,8 @@ class InMemoryStore:
     tasks: dict[str, AgentTask] = field(default_factory=dict)
     messages: dict[str, AgentMessage] = field(default_factory=dict)
     proposals: dict[str, OrderProposal] = field(default_factory=dict)
+    broker_orders: dict[str, BrokerOrderSnapshot] = field(default_factory=dict)
+    positions: dict[str, PortfolioPosition] = field(default_factory=dict)
     audit_events: list[dict] = field(default_factory=list)
 
     def add_agent(self, agent: Agent) -> Agent:
@@ -88,6 +95,23 @@ class InMemoryStore:
     def save_proposal(self, proposal: OrderProposal) -> OrderProposal:
         self.proposals[proposal.id] = proposal
         return proposal
+
+    def save_broker_order(self, snapshot: BrokerOrderSnapshot) -> BrokerOrderSnapshot:
+        self.broker_orders[snapshot.broker_order_id] = snapshot
+        return snapshot
+
+    def get_broker_order(self, broker_order_id: str) -> BrokerOrderSnapshot | None:
+        return self.broker_orders.get(broker_order_id)
+
+    def save_position(self, position: PortfolioPosition) -> PortfolioPosition:
+        self.positions[position.symbol.upper()] = position
+        return position
+
+    def get_position(self, symbol: str) -> PortfolioPosition | None:
+        return self.positions.get(symbol.upper())
+
+    def list_positions(self) -> list[PortfolioPosition]:
+        return list(self.positions.values())
 
     def audit(self, event_type: str, **payload) -> None:
         self.audit_events.append(

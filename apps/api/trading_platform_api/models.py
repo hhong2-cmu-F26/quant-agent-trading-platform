@@ -49,6 +49,16 @@ class ProposalStatus(str, Enum):
     FAILED = "failed"
 
 
+class BrokerOrderStatus(str, Enum):
+    PENDING = "pending"
+    SUBMITTED = "submitted"
+    PARTIALLY_FILLED = "partially_filled"
+    FILLED = "filled"
+    CANCELLED = "cancelled"
+    REJECTED = "rejected"
+    FAILED = "failed"
+
+
 class Agent(BaseModel):
     id: str = Field(default_factory=lambda: new_id("agent"))
     name: str
@@ -110,6 +120,26 @@ class ExecutionReceipt(BaseModel):
     broker_order_id: str
     status: str
     raw: dict[str, Any] = Field(default_factory=dict)
+
+
+class BrokerOrderSnapshot(BaseModel):
+    broker_order_id: str
+    proposal_id: str
+    symbol: str
+    side: OrderSide
+    status: BrokerOrderStatus
+    submitted_quantity: float
+    filled_quantity: float = 0.0
+    average_fill_price: float | None = None
+    raw: dict[str, Any] = Field(default_factory=dict)
+    observed_at: datetime = Field(default_factory=utc_now)
+
+
+class PortfolioPosition(BaseModel):
+    symbol: str
+    quantity: float = 0.0
+    average_price: float = 0.0
+    updated_at: datetime = Field(default_factory=utc_now)
 
 
 class OrderProposal(BaseModel):

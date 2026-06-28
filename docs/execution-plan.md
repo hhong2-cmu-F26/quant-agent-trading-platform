@@ -64,6 +64,7 @@ Current status:
 - `BrokerGateway` defines the broker boundary
 - `RobinhoodMCPGateway` owns Robinhood MCP tool names and equity order payloads
 - `ExecutionPolicy` is now a final deterministic submit gate
+- `ReconciliationService` updates proposals and positions only from broker-observed order snapshots
 - the production MCP transport is still intentionally not wired
 
 ## Phase 4: Frontend

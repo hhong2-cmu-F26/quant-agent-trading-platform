@@ -10,9 +10,10 @@ from .agent_os import AgentOS
 from .broker import MockRobinhoodGateway
 from .execution_policy import ExecutionPolicy, ExecutionPolicyConfig
 from .market_data import FeatureEngine, PriceBar
-from .models import Agent, AgentMessage, AgentTask, OrderProposalCreate
+from .models import Agent, AgentMessage, AgentTask, BrokerOrderSnapshot, OrderProposalCreate
 from .orders import OrderWorkflow
 from .paper import PaperTrade, PaperTradingEngine
+from .reconciliation import ReconciliationService
 from .risk import RiskEngine
 from .sqlite_store import SQLiteStore
 from .strategy import MomentumStrategy, MomentumStrategyConfig
@@ -31,6 +32,7 @@ order_workflow = OrderWorkflow(
 )
 feature_engine = FeatureEngine()
 paper_engine = PaperTradingEngine()
+reconciliation_service = ReconciliationService(repository)
 
 
 class FeatureRequest(BaseModel):
@@ -144,6 +146,19 @@ async def submit(proposal_id: str):
 @app.get("/audit")
 async def audit_log() -> dict:
     return {"events": repository.list_audit_events()}
+
+
+@app.post("/orders/reconcile")
+async def reconcile_order(snapshot: BrokerOrderSnapshot):
+    try:
+        return reconciliation_service.reconcile_order(snapshot)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
+@app.get("/portfolio/positions")
+async def list_positions() -> dict:
+    return {"positions": repository.list_positions()}
 
 
 @app.post("/quant/features")

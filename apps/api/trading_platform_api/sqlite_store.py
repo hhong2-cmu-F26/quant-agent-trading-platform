@@ -7,7 +7,7 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from .models import Agent, AgentMessage, AgentTask, OrderProposal, utc_now
+from .models import Agent, AgentMessage, AgentTask, BrokerOrderSnapshot, OrderProposal, PortfolioPosition, utc_now
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
@@ -112,6 +112,23 @@ class SQLiteStore:
         self._put("proposal", proposal.id, proposal)
         return proposal
 
+    def save_broker_order(self, snapshot: BrokerOrderSnapshot) -> BrokerOrderSnapshot:
+        self._put("broker_order", snapshot.broker_order_id, snapshot)
+        return snapshot
+
+    def get_broker_order(self, broker_order_id: str) -> BrokerOrderSnapshot | None:
+        return self._get("broker_order", broker_order_id, BrokerOrderSnapshot)
+
+    def save_position(self, position: PortfolioPosition) -> PortfolioPosition:
+        self._put("position", position.symbol.upper(), position)
+        return position
+
+    def get_position(self, symbol: str) -> PortfolioPosition | None:
+        return self._get("position", symbol.upper(), PortfolioPosition)
+
+    def list_positions(self) -> list[PortfolioPosition]:
+        return self._list("position", PortfolioPosition)
+
     def audit(self, event_type: str, **payload) -> None:
         with self._connect() as conn:
             conn.execute(
@@ -175,4 +192,3 @@ class SQLiteStore:
                 (kind,),
             ).fetchall()
         return [model_type.model_validate_json(row["payload_json"]) for row in rows]
-
