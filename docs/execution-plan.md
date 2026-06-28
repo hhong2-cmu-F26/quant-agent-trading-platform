@@ -26,6 +26,13 @@ Add:
 5. Risk-adjusted strategy scoring.
 6. Paper-trading replay engine.
 
+Current status:
+
+- deterministic feature snapshots are implemented in `market_data.py`
+- a long-only momentum strategy is implemented in `strategy.py`
+- long-only paper replay and risk-adjusted metrics are implemented in `paper.py`
+- these modules intentionally have no FastAPI dependency so workers and tests can reuse them
+
 ## Phase 3: Robinhood MCP Gateway
 
 Add a dedicated service wrapping Robinhood Trading MCP:
@@ -77,4 +84,3 @@ Add:
 - Execution Agent
 - Monitoring Agent
 - Options Agent later
-

@@ -1,19 +1,44 @@
 from __future__ import annotations
 
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
 
 from .agent_os import AgentOS
 from .broker import MockRobinhoodGateway
+from .market_data import FeatureEngine, PriceBar
 from .models import Agent, AgentMessage, AgentTask, OrderProposalCreate
 from .orders import OrderWorkflow
+from .paper import PaperTrade, PaperTradingEngine
 from .risk import RiskEngine
 from .store import store
+from .strategy import MomentumStrategy, MomentumStrategyConfig
 
 
 app = FastAPI(title="Quant Agent Trading Platform API")
 
 agent_os = AgentOS(store)
 order_workflow = OrderWorkflow(store, RiskEngine(), MockRobinhoodGateway())
+feature_engine = FeatureEngine()
+paper_engine = PaperTradingEngine()
+
+
+class FeatureRequest(BaseModel):
+    bars: list[PriceBar]
+    lookback: int = 20
+
+
+class MomentumProposalRequest(BaseModel):
+    agent_id: str
+    bars: list[PriceBar]
+    lookback: int = 20
+    min_momentum: float = 0.03
+    max_volatility: float = 0.60
+    target_notional: float = 500.0
+
+
+class PaperReplayRequest(BaseModel):
+    trades: list[PaperTrade]
+    marks: dict[str, float] = Field(default_factory=dict)
 
 
 def bad_request(exc: ValueError) -> HTTPException:
@@ -101,3 +126,34 @@ async def submit(proposal_id: str):
 async def audit_log() -> dict:
     return {"events": store.audit_events}
 
+
+@app.post("/quant/features")
+async def build_features(request: FeatureRequest):
+    try:
+        return feature_engine.build_snapshot(request.bars, lookback=request.lookback)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+
+@app.post("/quant/momentum/proposal")
+async def build_momentum_proposal(request: MomentumProposalRequest):
+    try:
+        features = feature_engine.build_snapshot(request.bars, lookback=request.lookback)
+    except ValueError as exc:
+        raise bad_request(exc) from exc
+
+    strategy = MomentumStrategy(
+        MomentumStrategyConfig(
+            min_momentum=request.min_momentum,
+            max_volatility=request.max_volatility,
+            target_notional=request.target_notional,
+        )
+    )
+    proposal = strategy.propose(request.agent_id, features)
+    return {"features": features, "proposal": proposal}
+
+
+@app.post("/paper/replay")
+async def replay_paper_trades(request: PaperReplayRequest):
+    portfolio, metrics = paper_engine.replay(request.trades, marks=request.marks)
+    return {"portfolio": portfolio, "metrics": metrics}

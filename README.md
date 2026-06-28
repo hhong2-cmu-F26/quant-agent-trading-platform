@@ -28,6 +28,16 @@ agent task
 -> audit trail
 ```
 
+It also includes the first quant evaluation slice:
+
+```text
+price bars
+-> deterministic feature snapshot
+-> long-only momentum proposal
+-> paper replay
+-> risk-adjusted metrics
+```
+
 LLM agents may research, propose, and explain. They do not get final direct authority to place live orders.
 
 ## Layout
@@ -47,4 +57,3 @@ python -m venv .venv
 pip install -r requirements.txt
 uvicorn trading_platform_api.main:app --reload
 ```
-
